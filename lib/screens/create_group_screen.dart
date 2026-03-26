@@ -130,7 +130,7 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
               style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
               decoration: InputDecoration(
                 hintText: 'e.g. Goa Trip, Office Lunch...',
-                hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted),
+                hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.35), fontWeight: FontWeight.w500),
                 filled: true,
                 fillColor: inputBg,
                 border: OutlineInputBorder(
@@ -246,7 +246,7 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
                     onSubmitted: (_) => _addMember(),
                     decoration: InputDecoration(
                       hintText: 'Member name...',
-                      hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted),
+                      hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.35), fontWeight: FontWeight.w500),
                       filled: true,
                       fillColor: inputBg,
                       border: OutlineInputBorder(

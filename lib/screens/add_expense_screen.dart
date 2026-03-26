@@ -46,13 +46,17 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
     });
   }
 
+  String? _error;
+
   void _saveExpense() {
     final name = _nameController.text.trim();
     final amount = double.tryParse(_amountController.text) ?? 0;
 
-    if (name.isEmpty) { _toast('Enter expense name!'); return; }
-    if (amount <= 0) { _toast('Enter a valid amount!'); return; }
-    if (_splitAmong.isEmpty) { _toast('Select at least one member!'); return; }
+    if (name.isEmpty) { setState(() => _error = 'Enter expense name!'); return; }
+    if (amount <= 0) { setState(() => _error = 'Enter a valid amount!'); return; }
+    if (_splitAmong.isEmpty) { setState(() => _error = 'Select at least one member!'); return; }
+
+    setState(() => _error = null);
 
     final expense = Expense.create(
       name: name,
@@ -65,15 +69,16 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
     context.read<AppProvider>().addExpense(widget.groupId, expense);
     HapticFeedback.mediumImpact();
     Navigator.pop(context);
-    _toast('Expense added! ✅');
   }
 
   void _toast(String msg) {
+    ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
       backgroundColor: AppColors.orange,
       duration: const Duration(seconds: 2),
       behavior: SnackBarBehavior.floating,
+      margin: const EdgeInsets.only(bottom: 120, left: 16, right: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
     ));
   }
@@ -171,7 +176,12 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
               style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
               decoration: InputDecoration(
                 hintText: 'e.g. Dinner, Hotel, Cab...',
-                hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted),
+                hintStyle: TextStyle(
+                  color: isDark
+                      ? AppColors.darkMuted.withOpacity(0.5)
+                      : AppColors.muted.withOpacity(0.35),
+                  fontWeight: FontWeight.w500,
+                ),
                 filled: true, fillColor: inputBg,
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
@@ -218,7 +228,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
                           color: _amountController.text.isEmpty
-                              ? (isDark ? AppColors.darkMuted : AppColors.muted)
+                              ? (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.35)
                               : textColor,
                         ),
                       ),
@@ -298,6 +308,29 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
               }).toList(),
             ),
             const SizedBox(height: 24),
+
+            // Inline error
+            if (_error != null) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.error.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.error.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.error_outline, color: AppColors.error, size: 16),
+                    const SizedBox(width: 8),
+                    Text(_error!, style: const TextStyle(
+                      fontFamily: 'Nunito', fontWeight: FontWeight.w700,
+                      fontSize: 13, color: AppColors.error,
+                    )),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // Save button
             GestureDetector(

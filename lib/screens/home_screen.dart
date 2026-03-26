@@ -7,6 +7,9 @@ import '../models/group.dart';
 import '../utils/constants.dart';
 import 'create_group_screen.dart';
 import 'group_detail_screen.dart';
+import 'quick_split_screen.dart';
+import 'money_diary_screen.dart';
+import 'friends_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -45,7 +48,10 @@ class HomeScreen extends StatelessWidget {
       // Friends FAB
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          // TODO: Open friends panel
+          HapticFeedback.mediumImpact();
+          Navigator.push(context, MaterialPageRoute(
+            builder: (_) => const FriendsScreen(),
+          ));
         },
         backgroundColor: AppColors.orange,
         child: const Text('👥', style: TextStyle(fontSize: 22)),
@@ -239,7 +245,9 @@ class HomeScreen extends StatelessWidget {
                 child: _actionButton(
                   '⚡ Quick Split',
                   onTap: () {
-                    // TODO: Open quick split
+                    Navigator.push(context, MaterialPageRoute(
+                      builder: (_) => const QuickSplitScreen(),
+                    ));
                   },
                 ),
               ),
@@ -249,7 +257,9 @@ class HomeScreen extends StatelessWidget {
           _actionButton(
             '📊 Money Diary',
             onTap: () {
-              // TODO: Open money diary
+              Navigator.push(context, MaterialPageRoute(
+                builder: (_) => const MoneyDiaryScreen(),
+              ));
             },
           ),
         ],
@@ -344,7 +354,7 @@ class HomeScreen extends StatelessWidget {
       },
       onLongPress: () {
         HapticFeedback.heavyImpact();
-        // TODO: Show context menu
+        _showContextMenu(context, group, isDark);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
@@ -464,7 +474,146 @@ class HomeScreen extends StatelessWidget {
     );
   }
 
-  // ── BALANCE CALCULATION ────────────────────────────────────────
+  void _showContextMenu(BuildContext context, Group group, bool isDark) {
+    final bg = isDark ? AppColors.darkSurface : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => Container(
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          border: const Border(top: BorderSide(color: AppColors.orange, width: 2)),
+        ),
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+            // Handle
+            Center(child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
+            )),
+            const SizedBox(height: 12),
+
+            // Group name header
+            Row(
+              children: [
+                Text(group.emoji, style: const TextStyle(fontSize: 20)),
+                const SizedBox(width: 8),
+                Text(group.name, style: TextStyle(
+                  fontFamily: 'Nunito', fontSize: 16,
+                  fontWeight: FontWeight.w900, color: AppColors.orange,
+                )),
+              ],
+            ),
+            Divider(color: borderColor, height: 20),
+
+            // Menu items
+            _ctxItem('💸', 'Add Expense', textColor, () {
+              Navigator.pop(context);
+              Future.delayed(const Duration(milliseconds: 300), () {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => GroupDetailScreen(groupId: group.id),
+                ));
+              });
+            }),
+            _ctxItem('⚖️', 'Balances', textColor, () {
+              Navigator.pop(context);
+              Future.delayed(const Duration(milliseconds: 300), () {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => GroupDetailScreen(groupId: group.id, initialTab: 1),
+                ));
+              });
+            }),
+            _ctxItem('🤝', 'Settle Up', textColor, () {
+              Navigator.pop(context);
+              Future.delayed(const Duration(milliseconds: 300), () {
+                Navigator.push(context, MaterialPageRoute(
+                  builder: (_) => GroupDetailScreen(groupId: group.id, initialTab: 2),
+                ));
+              });
+            }),
+            _ctxItem('✏️', 'Edit Group', textColor, () {
+              Navigator.pop(context);
+              _showEditGroupSheet(context, group, isDark);
+            }),
+
+            const SizedBox(height: 8),
+            Divider(color: borderColor, height: 1),
+            const SizedBox(height: 8),
+
+            _ctxItem('🗑️', 'Delete Group', AppColors.error, () {
+              Navigator.pop(context);
+              _confirmDeleteGroup(context, group, isDark);
+            }),
+          ],
+        ),
+        ),
+      ),
+    );
+  }
+
+  Widget _ctxItem(String emoji, String label, Color color, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        child: Row(
+          children: [
+            Text(emoji, style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 16),
+            Text(label, style: TextStyle(
+              fontFamily: 'Nunito', fontWeight: FontWeight.w700,
+              fontSize: 16, color: color,
+            )),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditGroupSheet(BuildContext context, Group group, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _EditGroupSheet(group: group),
+    );
+  }
+
+  void _confirmDeleteGroup(BuildContext context, Group group, bool isDark) {
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete "${group.name}"?', style: const TextStyle(
+          fontFamily: 'Nunito', fontWeight: FontWeight.w900,
+        )),
+        content: const Text('This will permanently delete the group and all its expenses.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              context.read<AppProvider>().deleteGroup(group.id);
+              Navigator.pop(context);
+            },
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+  }
   List<Map<String, dynamic>> _calcBalances(Group group) {
     final net = <String, double>{};
     for (final m in group.members) {
@@ -501,4 +650,214 @@ class HomeScreen extends StatelessWidget {
     }
     return transactions;
   }
+}
+
+// ── EDIT GROUP SHEET ───────────────────────────────────────────────
+class _EditGroupSheet extends StatefulWidget {
+  final Group group;
+  const _EditGroupSheet({required this.group});
+
+  @override
+  State<_EditGroupSheet> createState() => _EditGroupSheetState();
+}
+
+class _EditGroupSheetState extends State<_EditGroupSheet> {
+  late TextEditingController _nameController;
+  late String _selectedEmoji;
+  late List<String> _members;
+  final _memberController = TextEditingController();
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(text: widget.group.name);
+    _selectedEmoji = widget.group.emoji;
+    _members = List.from(widget.group.members);
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _memberController.dispose();
+    super.dispose();
+  }
+
+  void _addMember() {
+    final name = _memberController.text.trim();
+    if (name.isEmpty || _members.contains(name)) return;
+    setState(() => _members.add(name));
+    _memberController.clear();
+  }
+
+  void _save() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) return;
+    widget.group.name = name;
+    widget.group.emoji = _selectedEmoji;
+    widget.group.members = _members;
+    context.read<AppProvider>().updateGroup(widget.group);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.watch<AppProvider>().isDark;
+    final bg = isDark ? AppColors.darkSurface : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
+    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.only(
+        left: 20, right: 20, top: 16,
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
+            )),
+            const SizedBox(height: 16),
+            Text('Edit Group', style: TextStyle(
+              fontFamily: 'Nunito', fontSize: 22,
+              fontWeight: FontWeight.w900, color: textColor,
+            )),
+            const SizedBox(height: 20),
+
+            // Name
+            _label('GROUP NAME'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _nameController,
+              style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+              decoration: InputDecoration(
+                filled: true, fillColor: inputBg,
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Emoji
+            _label('PICK AN EMOJI'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: AppConstants.groupEmojis.map((emoji) {
+                final isSelected = emoji == _selectedEmoji;
+                return GestureDetector(
+                  onTap: () => setState(() => _selectedEmoji = emoji),
+                  child: Container(
+                    width: 52, height: 52,
+                    decoration: BoxDecoration(
+                      color: isSelected ? AppColors.orange.withOpacity(0.15) : inputBg,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected ? AppColors.orange : borderColor,
+                        width: isSelected ? 2 : 1.5,
+                      ),
+                    ),
+                    child: Center(child: Text(emoji, style: const TextStyle(fontSize: 24))),
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 20),
+
+            // Members
+            _label('MEMBERS'),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8, runSpacing: 8,
+              children: _members.map((m) {
+                final isYou = m == 'You';
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: isYou ? AppColors.orange.withOpacity(0.15) : inputBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: isYou ? AppColors.orange : borderColor),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(m, style: TextStyle(
+                        fontFamily: 'Nunito', fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                        color: isYou ? AppColors.orange : textColor,
+                      )),
+                      if (!isYou) ...[
+                        const SizedBox(width: 6),
+                        GestureDetector(
+                          onTap: () => setState(() => _members.remove(m)),
+                          child: const Icon(Icons.close, size: 14, color: AppColors.muted),
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _memberController,
+                    onSubmitted: (_) => _addMember(),
+                    style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+                    decoration: InputDecoration(
+                      hintText: 'Add member...',
+                      hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)),
+                      filled: true, fillColor: inputBg,
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                GestureDetector(
+                  onTap: _addMember,
+                  child: Container(
+                    width: 48, height: 48,
+                    decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(12)),
+                    child: const Icon(Icons.add, color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 24),
+
+            GestureDetector(
+              onTap: _save,
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
+                child: const Center(child: Text('Save Changes →', style: TextStyle(
+                  fontFamily: 'Nunito', fontSize: 16,
+                  fontWeight: FontWeight.w800, color: Colors.white,
+                ))),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _label(String text) => Text(text, style: const TextStyle(
+    fontFamily: 'Nunito', fontSize: 12,
+    fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5,
+  ));
 }

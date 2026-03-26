@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "784512951466",
+    "project_id": "splitsathi-454aa",
+    "storage_bucket": "splitsathi-454aa.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:784512951466:android:41ec5d3d9964c8d7469cd3",
+        "android_client_info": {
+          "package_name": "com.example.splitsathi"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDWJlMk4DYvaoF0QhOB7972u-YAvCVo7j8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
