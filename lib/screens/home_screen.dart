@@ -1,3 +1,4 @@
+import '../widgets/app_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -21,6 +22,7 @@ class HomeScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.cream,
+      drawer: const AppDrawer(),
       body: SafeArea(
         child: SingleChildScrollView(
           child: Column(
@@ -102,33 +104,61 @@ class HomeScreen extends StatelessWidget {
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Logo + Dark mode toggle
+              // Navigation Menu + Logo + Dark mode toggle
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  RichText(
-                    text: const TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'Split',
-                          style: TextStyle(
-                            fontFamily: 'Nunito',
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            color: Colors.white,
-                          ),
+                  Row(
+                    children: [
+                      // ==========================================
+                      // THE FIX IS HERE: The Builder gives us the 
+                      // correct context to open the Drawer!
+                      // ==========================================
+                      Builder(
+                        builder: (BuildContext innerContext) {
+                          return GestureDetector(
+                            onTap: () {
+                              // Now it uses innerContext instead of context!
+                              Scaffold.of(innerContext).openDrawer();
+                            },
+                            child: const Padding(
+                              padding: EdgeInsets.only(right: 12.0),
+                              child: Icon(
+                                Icons.menu,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // ==========================================
+
+                      RichText(
+                        text: const TextSpan(
+                          children: [
+                            TextSpan(
+                              text: 'Split',
+                              style: TextStyle(
+                                fontFamily: 'Nunito',
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                color: Colors.white,
+                              ),
+                            ),
+                            TextSpan(
+                              text: 'Sathi',
+                              style: TextStyle(
+                                fontFamily: 'Nunito',
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                color: Color(0xFFFCD34D),
+                              ),
+                            ),
+                          ],
                         ),
-                        TextSpan(
-                          text: 'Sathi',
-                          style: TextStyle(
-                            fontFamily: 'Nunito',
-                            fontSize: 28,
-                            fontWeight: FontWeight.w900,
-                            color: Color(0xFFFCD34D),
-                          ),
-                        ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                   // Dark mode toggle
                   GestureDetector(
@@ -154,12 +184,14 @@ class HomeScreen extends StatelessWidget {
                 ],
               ),
 
-              const SizedBox(height: 4),
-              const Text(
-                'Split bills. Not friendships. 🤝',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white60,
+              const Padding(
+                padding: EdgeInsets.only(left: 40.0, top: 4),
+                child: Text(
+                  'Split bills. Not friendships. 🤝',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.white60,
+                  ),
                 ),
               ),
 
