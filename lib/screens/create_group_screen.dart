@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../models/group.dart';
 import '../utils/constants.dart';
+import '../services/db_service.dart';
 
 class CreateGroupSheet extends StatefulWidget {
   const CreateGroupSheet({super.key});
@@ -41,7 +42,7 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
     setState(() => _members.remove(name));
   }
 
-  void _createGroup() {
+  void _createGroup() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) {
       _showToast('Enter a group name!');
@@ -52,12 +53,19 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
       return;
     }
 
+    final db = DatabaseService();
+    await db.createGroup(name);
+    
+    // 1. Check if the screen is still open right after the await!
+    if (!mounted) return;
+
     final group = Group.create(
       name: name,
       emoji: _selectedEmoji,
       members: _members,
     );
-
+    
+    // 2. Now it's 100% safe to use 'context'
     context.read<AppProvider>().addGroup(group);
     HapticFeedback.mediumImpact();
     Navigator.pop(context);

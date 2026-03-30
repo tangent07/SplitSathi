@@ -1,8 +1,10 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'screens/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'providers/app_provider.dart';
 import 'screens/home_screen.dart';
 
@@ -12,7 +14,7 @@ void main() async {
   final prefs = await SharedPreferences.getInstance();
   runApp(
     ChangeNotifierProvider(
-      create: (_) => AppProvider(prefs),
+      create: (context) => AppProvider(prefs),
       child: const SplitSathiApp(),
     ),
   );
@@ -30,7 +32,17 @@ class SplitSathiApp extends StatelessWidget {
       themeMode: provider.isDark ? ThemeMode.dark : ThemeMode.light,
       theme: _lightTheme(),
       darkTheme: _darkTheme(),
-      home: const HomeScreen(),
+      home: StreamBuilder<User?>(
+        stream: FirebaseAuth.instance.authStateChanges(),
+        builder: (context, snapshot) {
+          // If Firebase says we have a logged-in user, go straight to Home!
+          if (snapshot.hasData) {
+            return const HomeScreen();
+          }
+          // Otherwise, show them the Login Screen
+          return const LoginScreen();
+        },
+      ),
     );
   }
 
