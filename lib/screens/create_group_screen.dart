@@ -53,20 +53,14 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
       return;
     }
 
+    // 1. Send EVERYTHING to Firebase!
     final db = DatabaseService();
-    await db.createGroup(name);
-    
-    // 1. Check if the screen is still open right after the await!
-    if (!mounted) return;
+    await db.createGroup(name, _selectedEmoji, _members); 
 
-    final group = Group.create(
-      name: name,
-      emoji: _selectedEmoji,
-      members: _members,
-    );
-    
-    // 2. Now it's 100% safe to use 'context'
-    context.read<AppProvider>().addGroup(group);
+    // 2. Safety check before closing the screen
+    if (!mounted) return; 
+
+    // 3. Close the screen! (Notice we deleted the AppProvider local save)
     HapticFeedback.mediumImpact();
     Navigator.pop(context);
     _showToast('Group created! 🎉');

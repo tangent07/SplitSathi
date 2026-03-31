@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/app_drawer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -346,10 +347,84 @@ class HomeScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
 
-          if (provider.groups.isEmpty)
-            _buildEmptyState(isDark)
-          else
-            ...provider.groups.map((g) => _buildGroupRow(context, g, isDark)),
+          // Live Database Listener
+          StreamBuilder<QuerySnapshot>(
+            stream: FirebaseFirestore.instance.collection('groups').orderBy('createdAt', descending: true).snapshots(),
+            builder: (context, snapshot) {
+              // 1. Show a loading spinner while waiting for the internet
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.only(top: 20), 
+                    child: CircularProgressIndicator(color: AppColors.orange)
+                  )
+                );
+              }
+
+              // 2. Grab the actual list of documents from the cloud
+              final docs = snapshot.data?.docs ?? [];
+
+              // 3. If the database is empty, use YOUR beautiful empty state!
+              if (docs.isEmpty) {
+                return _buildEmptyState(isDark);
+              }
+
+              // 4. If we have groups, build the list safely using a Column
+              return Column(
+                children: docs.map((doc) {
+                  final data = doc.data() as Map<String, dynamic>;
+                  final String name = data['name'] ?? 'Unnamed Group';
+                  final String emoji = data['emoji'] ?? '👥';
+                  final List members = data['members'] ?? [];
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: isDark ? AppColors.darkSurface : Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.border),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      leading: Container(
+                        width: 48, 
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 24))),
+                      ),
+                      title: Text(
+                        name,
+                        style: TextStyle(
+                          fontFamily: 'Nunito',
+                          fontWeight: FontWeight.w800,
+                          fontSize: 16,
+                          color: isDark ? Colors.white : const Color(0xFF1C1C1C),
+                        ),
+                      ),
+                      subtitle: Text(
+                        '${members.length} members',
+                        style: TextStyle(
+                          fontFamily: 'Nunito',
+                          fontWeight: FontWeight.w600,
+                          color: isDark ? AppColors.darkMuted : AppColors.muted,
+                        ),
+                      ),
+                      trailing: Icon(
+                        Icons.chevron_right, 
+                        color: isDark ? AppColors.darkMuted : AppColors.muted
+                      ),
+                      onTap: () {
+                        // We will wire this up to open the specific group next!
+                      },
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
         ],
       ),
     );

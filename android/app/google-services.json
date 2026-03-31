@@ -12,7 +12,20 @@
           "package_name": "com.example.splitsathi"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "784512951466-i6lq41csimq06ab3t58078bs83fl8ni6.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.splitsathi",
+            "certificate_hash": "b1b873a5f782b1faacbc22627724be5b3578c772"
+          }
+        },
+        {
+          "client_id": "784512951466-h8n6mrpb7ii30f8kg46uenpq1utip899.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyDWJlMk4DYvaoF0QhOB7972u-YAvCVo7j8"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "784512951466-h8n6mrpb7ii30f8kg46uenpq1utip899.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
