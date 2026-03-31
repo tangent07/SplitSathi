@@ -4,10 +4,12 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../models/group.dart';
 import '../utils/constants.dart';
+import '../services/db_service.dart';
 
 class AddExpenseSheet extends StatefulWidget {
   final String groupId;
-  const AddExpenseSheet({super.key, required this.groupId});
+  final List<String> members; // <--- NEW: We require the members list now
+  const AddExpenseSheet({super.key, required this.groupId, required this.members});
 
   @override
   State<AddExpenseSheet> createState() => _AddExpenseSheetState();
@@ -23,10 +25,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   @override
   void initState() {
     super.initState();
-    final group = context.read<AppProvider>().groups
-        .firstWhere((g) => g.id == widget.groupId);
-    _paidBy = 'You';
-    _splitAmong = List.from(group.members);
+    // Use the passed members list instead of asking AppProvider!
+    _paidBy = widget.members.contains('You') ? 'You' : widget.members.first;
+    _splitAmong = List.from(widget.members); 
   }
 
   @override
@@ -48,7 +49,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
 
   String? _error;
 
-  void _saveExpense() {
+  void _saveExpense() async {
     final name = _nameController.text.trim();
     final amount = double.tryParse(_amountController.text) ?? 0;
 
@@ -58,17 +59,16 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
 
     setState(() => _error = null);
 
-    final expense = Expense.create(
-      name: name,
-      amount: amount,
-      paidBy: _paidBy!,
-      splitAmong: _splitAmong,
-      category: _selectedCategory,
-    );
+    // 1. Send it directly to Firebase!
+    final db = DatabaseService();
+    await db.addExpense(widget.groupId, name, amount, _paidBy!, _splitAmong, _selectedCategory);
 
-    context.read<AppProvider>().addExpense(widget.groupId, expense);
+    // 2. Safety check
+    if (!mounted) return;
+
     HapticFeedback.mediumImpact();
     Navigator.pop(context);
+    _toast('Expense added! 💸');
   }
 
   void _toast(String msg) {
@@ -99,7 +99,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
-    final group = provider.groups.firstWhere((g) => g.id == widget.groupId);
+    //final group = provider.groups.firstWhere((g) => g.id == widget.groupId);
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
@@ -266,7 +266,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     color: textColor,
                     fontSize: 15,
                   ),
-                  items: group.members.map((m) => DropdownMenuItem(
+                  items: widget.members.map((m) => DropdownMenuItem(
                     value: m,
                     child: Text(m),
                   )).toList(),
@@ -281,7 +281,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8, runSpacing: 8,
-              children: group.members.map((m) {
+              children: widget.members.map((m) {
                 final selected = _splitAmong.contains(m);
                 return GestureDetector(
                   onTap: () {

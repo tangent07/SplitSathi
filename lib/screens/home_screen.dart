@@ -417,7 +417,14 @@ class HomeScreen extends StatelessWidget {
                         color: isDark ? AppColors.darkMuted : AppColors.muted
                       ),
                       onTap: () {
-                        // We will wire this up to open the specific group next!
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => GroupDetailScreen(
+                              groupId: doc.id, // Only passing the ID now!
+                            ),
+                          ),
+                        );
                       },
                     ),
                   );

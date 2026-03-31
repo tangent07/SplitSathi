@@ -1,3 +1,5 @@
+import '../services/db_service.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -83,26 +85,87 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
-    final group = _getGroup(provider);
 
-    if (group == null) {
-      return const Scaffold(body: Center(child: Text('Group not found')));
+    // Helper to safely convert Firebase Timestamps to standard Dart DateTimes
+    DateTime parseDate(dynamic val) {
+      if (val == null) return DateTime.now();
+      if (val is Timestamp) return val.toDate(); // Handles Firebase dates!
+      if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
+      return DateTime.now();
     }
 
-    final bg = isDark ? AppColors.darkBg : AppColors.cream;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final surfaceColor = isDark ? AppColors.darkSurface : Colors.white;
+    // BRIDGE 1: Listen to the main Group document
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance.collection('groups').doc(widget.groupId).snapshots(),
+      builder: (context, groupSnapshot) {
+        if (groupSnapshot.connectionState == ConnectionState.waiting) {
+          return Scaffold(backgroundColor: isDark ? AppColors.darkBg : AppColors.cream, body: const Center(child: CircularProgressIndicator(color: AppColors.orange)));
+        }
+        if (!groupSnapshot.hasData || !groupSnapshot.data!.exists) {
+          return const Scaffold(body: Center(child: Text('Group not found')));
+        }
 
-    // Calculate balances
-    final balances = _calcBalances(group);
-    double myOwe = 0, myReceive = 0;
-    for (final t in balances) {
-      if (t['from'] == 'You') myOwe += t['amount'] as double;
-      if (t['to'] == 'You') myReceive += t['amount'] as double;
-    }
+        final groupData = groupSnapshot.data!.data() as Map<String, dynamic>;
 
-    return Scaffold(
+        // BRIDGE 2: Listen to the expenses Subcollection!
+        // BRIDGE 2: Listen to the expenses Subcollection!
+        return StreamBuilder<QuerySnapshot>(
+          // Removed Firebase orderBy to prevent silent index errors!
+          stream: FirebaseFirestore.instance.collection('groups').doc(widget.groupId).collection('expenses').snapshots(),
+          builder: (context, expenseSnapshot) {
+            
+            // 1. If Firebase throws an error, SHOW IT on screen so we can fix it!
+            if (expenseSnapshot.hasError) {
+              return Scaffold(body: Center(child: Text('Database Error: ${expenseSnapshot.error}')));
+            }
+
+            // 2. Map the raw cloud data into your beautiful Expense objects!
+            final List<Expense> liveExpenses = (expenseSnapshot.data?.docs ?? []).map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return Expense(
+                id: doc.id, 
+                name: data['name'] ?? 'Unnamed',
+                amount: (data['amount'] as num?)?.toDouble() ?? 0.0,
+                paidBy: data['paidBy'] ?? '',
+                splitAmong: List<String>.from(data['splitAmong'] ?? []),
+                category: data['category'] ?? '💸',
+                date: parseDate(data['date']),
+                deleted: data['deleted'] ?? false,
+                deletedAt: data['deletedAt'] != null ? parseDate(data['deletedAt']) : null,
+                isSettlement: data['isSettlement'] ?? false,
+                isGhost: data['isGhost'] ?? false,
+                ghostText: data['ghostText'],
+              );
+            }).toList();
+
+            // 3. Sort the expenses locally by date (Safest method!)
+            liveExpenses.sort((a, b) => a.date.compareTo(b.date));
+
+            // 4. Combine it all into your master Group object
+            final group = Group(
+              id: widget.groupId,
+              name: groupData['name'] ?? 'Unnamed',
+              emoji: groupData['emoji'] ?? '👥',
+              members: List<String>.from(groupData['members'] ?? []),
+              expenses: liveExpenses, 
+              createdAt: parseDate(groupData['createdAt']),
+            );
+
+            // 5. Your original UI setup stays completely untouched
+            final bg = isDark ? AppColors.darkBg : AppColors.cream;
+            final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+            final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
+            final surfaceColor = isDark ? AppColors.darkSurface : Colors.white;
+
+            // Calculate balances live!
+            final balances = _calcBalances(group);
+            double myOwe = 0, myReceive = 0;
+            for (final t in balances) {
+              if (t['from'] == 'You') myOwe += t['amount'] as double;
+              if (t['to'] == 'You') myReceive += t['amount'] as double;
+            }
+
+      return Scaffold(
       backgroundColor: bg,
       body: SafeArea(
         child: Column(
@@ -235,14 +298,21 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             context: context,
             isScrollControlled: true,
             backgroundColor: Colors.transparent,
-            builder: (_) => AddExpenseSheet(groupId: widget.groupId),
+            builder: (_) => AddExpenseSheet(
+              groupId: widget.groupId,
+              members: group.members,
+            ),
           );
         },
         backgroundColor: AppColors.orange,
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
-  }
+    },//builder
+    );
+    },
+    );
+  }//build
 
   Widget _balanceCard(String label, String amount, Color amountColor,
       Color surface, Color border) {
@@ -471,11 +541,15 @@ class _ExpensesTab extends StatelessWidget {
         ],
       ),
     );
+    
+    // THE CLOUD UPDATE!
     if (result == true) {
-      context.read<AppProvider>().deleteExpense(group.id, exp.id);
+      final db = DatabaseService();
+      await db.deleteExpense(group.id, exp.id); 
       HapticFeedback.mediumImpact();
     }
-    return false; // We handle deletion manually via provider
+    
+    return false; // We handle the dismissal manually via the StreamBuilder now
   }
 
   void _openEditSheet(BuildContext context, Expense exp) {
@@ -483,7 +557,7 @@ class _ExpensesTab extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _EditExpenseSheet(groupId: group.id, expense: exp),
+      builder: (_) => _EditExpenseSheet(groupId: group.id, expense: exp, members: group.members),
     );
   }
 }
@@ -594,31 +668,36 @@ class _SettleUpTabState extends State<_SettleUpTab> {
 
   void _markFullSettled(int i) async {
     final t = widget.balances[i];
+    
+    // 1. Trigger your beautiful fade animation!
     setState(() => _settling[i] = true);
     await Future.delayed(const Duration(milliseconds: 400));
 
-    final expense = Expense.create(
-      name: '${t['from']} paid ${t['to']}',
-      amount: t['amount'] as double,
-      paidBy: t['from'] as String,
-      splitAmong: [t['to'] as String],
-      category: '✅',
-    );
-    final settled = expense.copyWith(
-      isSettlement: true,
-      isGhost: true,
-      ghostText: '${t['from']} settled ₹${(t['amount'] as double).round()} → ${t['to']}',
+    final from = t['from'] as String;
+    final to = t['to'] as String;
+    final amount = t['amount'] as double;
+
+    // 2. Send the settlement to Firebase!
+    final db = DatabaseService();
+    await db.addSettlement(
+      widget.group.id,
+      '$from paid $to',
+      amount,
+      from,
+      to,
+      '✅',
+      '$from settled ₹${amount.round()} → $to'
     );
 
+    // 3. Clear the animation and show toast
     if (mounted) {
-      setState(() => _settling.remove(i)); // clear fade immediately
-      context.read<AppProvider>().addExpense(widget.group.id, settled);
+      setState(() => _settling.remove(i)); 
       HapticFeedback.mediumImpact();
       _showToast('Fully settled! ✅');
     }
   }
 
-  void _markPartialSettled(int i) {
+  void _markPartialSettled(int i) async {
     final t = widget.balances[i];
     final ctrl = _partialControllers[i];
     final partial = double.tryParse(ctrl?.text ?? '') ?? 0;
@@ -627,24 +706,28 @@ class _SettleUpTabState extends State<_SettleUpTab> {
     if (partial <= 0) { _showToast('Enter an amount!'); return; }
     if (partial >= full) { _showToast('Use Full ✓ for full amount!'); return; }
 
-    final expense = Expense.create(
-      name: '${t['from']} partially paid ${t['to']}',
-      amount: partial,
-      paidBy: t['from'] as String,
-      splitAmong: [t['to'] as String],
-      category: '🔄',
-    );
-    final ghost = expense.copyWith(
-      isSettlement: true,
-      isGhost: true,
-      ghostText: '${t['from']} partially paid ₹${partial.round()} → ${t['to']}',
+    final from = t['from'] as String;
+    final to = t['to'] as String;
+
+    // 1. Send the partial payment to Firebase!
+    final db = DatabaseService();
+    await db.addSettlement(
+      widget.group.id,
+      '$from partially paid $to',
+      partial,
+      from,
+      to,
+      '🔄',
+      '$from partially paid ₹${partial.round()} → $to'
     );
 
-    context.read<AppProvider>().addExpense(widget.group.id, ghost);
-    setState(() => _showPartial[i] = false);
-    ctrl?.clear();
-    HapticFeedback.mediumImpact();
-    _showToast('₹${partial.round()} recorded! 🔄');
+    // 2. Close the inline numpad and show toast
+    if (mounted) {
+      setState(() => _showPartial[i] = false);
+      ctrl?.clear();
+      HapticFeedback.mediumImpact();
+      _showToast('₹${partial.round()} recorded! 🔄');
+    }
   }
 
   void _showToast(String msg) {
@@ -1015,7 +1098,8 @@ class _PartialNumpadState extends State<_PartialNumpad> {
 class _EditExpenseSheet extends StatefulWidget {
   final String groupId;
   final Expense expense;
-  const _EditExpenseSheet({required this.groupId, required this.expense});
+  final List<String> members;
+  const _EditExpenseSheet({required this.groupId, required this.expense, required this.members,});
 
   @override
   State<_EditExpenseSheet> createState() => _EditExpenseSheetState();
@@ -1056,21 +1140,32 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
     });
   }
 
-  void _saveExpense() {
+  void _saveExpense() async {
     final name = _nameController.text.trim();
     final amount = double.tryParse(_amountController.text) ?? 0;
+    
     if (name.isEmpty) { setState(() => _error = 'Enter expense name!'); return; }
     if (amount <= 0) { setState(() => _error = 'Enter a valid amount!'); return; }
+    if (_splitAmong.isEmpty) { setState(() => _error = 'Select at least one member!'); return; }
+
     setState(() => _error = null);
 
-    final updated = widget.expense.copyWith(
-      name: name,
-      amount: amount,
-      paidBy: _paidBy,
-      splitAmong: _splitAmong,
-      category: _selectedCategory,
+    // 1. Send the edits straight to Firebase!
+    final db = DatabaseService();
+    await db.updateExpense(
+      widget.groupId, 
+      widget.expense.id, 
+      name, 
+      amount, 
+      _paidBy, 
+      _splitAmong, 
+      _selectedCategory
     );
-    context.read<AppProvider>().updateExpense(widget.groupId, updated);
+
+    // 2. Safety check before closing
+    if (!mounted) return;
+
+    // Notice: NO AppProvider code is here anymore! The StreamBuilder updates the UI automatically.
     HapticFeedback.mediumImpact();
     Navigator.pop(context);
   }
@@ -1092,7 +1187,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
-    final group = provider.groups.firstWhere((g) => g.id == widget.groupId);
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
@@ -1199,7 +1293,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
                   isExpanded: true,
                   dropdownColor: isDark ? AppColors.darkSurface2 : Colors.white,
                   style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, color: textColor, fontSize: 15),
-                  items: group.members.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
+                  items: widget.members.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                   onChanged: (val) => setState(() => _paidBy = val!),
                 ),
               ),
@@ -1211,7 +1305,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
             const SizedBox(height: 8),
             Wrap(
               spacing: 8, runSpacing: 8,
-              children: group.members.map((m) {
+              children: widget.members.map((m) {
                 final selected = _splitAmong.contains(m);
                 return GestureDetector(
                   onTap: () { HapticFeedback.selectionClick(); _toggleMember(m); },
