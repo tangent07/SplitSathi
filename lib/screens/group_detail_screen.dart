@@ -85,6 +85,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
+    final currency = provider.currency; // <-- DYNAMIC CURRENCY
 
     // Helper to safely convert Firebase Timestamps to standard Dart DateTimes
     DateTime parseDate(dynamic val) {
@@ -94,7 +95,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       return DateTime.now();
     }
 
-    // BRIDGE 1: Listen to the main Group document
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance.collection('groups').doc(widget.groupId).snapshots(),
       builder: (context, groupSnapshot) {
@@ -107,19 +107,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
         final groupData = groupSnapshot.data!.data() as Map<String, dynamic>;
 
-        // BRIDGE 2: Listen to the expenses Subcollection!
-        // BRIDGE 2: Listen to the expenses Subcollection!
         return StreamBuilder<QuerySnapshot>(
-          // Removed Firebase orderBy to prevent silent index errors!
           stream: FirebaseFirestore.instance.collection('groups').doc(widget.groupId).collection('expenses').snapshots(),
           builder: (context, expenseSnapshot) {
             
-            // 1. If Firebase throws an error, SHOW IT on screen so we can fix it!
             if (expenseSnapshot.hasError) {
               return Scaffold(body: Center(child: Text('Database Error: ${expenseSnapshot.error}')));
             }
 
-            // 2. Map the raw cloud data into your beautiful Expense objects!
             final List<Expense> liveExpenses = (expenseSnapshot.data?.docs ?? []).map((doc) {
               final data = doc.data() as Map<String, dynamic>;
               return Expense(
@@ -138,10 +133,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               );
             }).toList();
 
-            // 3. Sort the expenses locally by date (Safest method!)
             liveExpenses.sort((a, b) => a.date.compareTo(b.date));
 
-            // 4. Combine it all into your master Group object
             final group = Group(
               id: widget.groupId,
               name: groupData['name'] ?? 'Unnamed',
@@ -151,13 +144,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               createdAt: parseDate(groupData['createdAt']),
             );
 
-            // 5. Your original UI setup stays completely untouched
             final bg = isDark ? AppColors.darkBg : AppColors.cream;
             final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
             final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
             final surfaceColor = isDark ? AppColors.darkSurface : Colors.white;
 
-            // Calculate balances live!
             final balances = _calcBalances(group);
             double myOwe = 0, myReceive = 0;
             for (final t in balances) {
@@ -170,13 +161,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Back button + group info
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Back
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
                     child: Row(
@@ -195,7 +184,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   ),
                   const SizedBox(height: 16),
 
-                  // Group header
                   Row(
                     children: [
                       Container(
@@ -230,19 +218,18 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   ),
                   const SizedBox(height: 16),
 
-                  // Balance cards
                   Row(
                     children: [
-                      Expanded(child: _balanceCard('YOU OWE', '₹${myOwe.round()}',
+                      // <-- UPDATED CURRENCY IN CARDS -->
+                      Expanded(child: _balanceCard('YOU OWE', '$currency${myOwe.round()}',
                           AppColors.error, surfaceColor, borderColor)),
                       const SizedBox(width: 12),
-                      Expanded(child: _balanceCard('YOU GET BACK', '₹${myReceive.round()}',
+                      Expanded(child: _balanceCard('YOU GET BACK', '$currency${myReceive.round()}',
                           AppColors.success, surfaceColor, borderColor)),
                     ],
                   ),
                   const SizedBox(height: 16),
 
-                  // Tabs
                   Container(
                     decoration: BoxDecoration(
                       color: isDark ? AppColors.darkSurface2 : const Color(0xFFFFF3E0),
@@ -275,7 +262,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               ),
             ),
 
-            // Tab content
             Expanded(
               child: TabBarView(
                 controller: _tabController,
@@ -290,7 +276,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         ),
       ),
 
-      // FAB - Add expense
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           HapticFeedback.mediumImpact();
@@ -308,11 +293,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         child: const Icon(Icons.add, color: Colors.white),
       ),
     );
-    },//builder
+    },
     );
     },
     );
-  }//build
+  }
 
   Widget _balanceCard(String label, String amount, Color amountColor,
       Color surface, Color border) {
@@ -354,6 +339,7 @@ class _ExpensesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final currency = context.watch<AppProvider>().currency; // <-- GET CURRENCY
     final expenses = group.expenses.reversed.toList();
 
     if (expenses.isEmpty) {
@@ -396,7 +382,6 @@ class _ExpensesTab extends StatelessWidget {
 
         return Column(
           children: [
-            // Date separator
             if (showDateSep)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
@@ -414,7 +399,6 @@ class _ExpensesTab extends StatelessWidget {
                 ),
               ),
 
-            // Ghost row
             if (exp.deleted || exp.isGhost)
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -423,8 +407,9 @@ class _ExpensesTab extends StatelessWidget {
                     Text(exp.isGhost ? (exp.category == '✅' ? '✅' : '🔄') : '🚫',
                       style: const TextStyle(fontSize: 16)),
                     const SizedBox(width: 8),
+                    // <-- UPDATED CURRENCY -->
                     Expanded(child: Text(
-                      exp.isGhost ? (exp.ghostText ?? '') : 'You deleted · ₹${exp.amount.round()} · ${exp.name}',
+                      exp.isGhost ? (exp.ghostText ?? '') : 'You deleted · $currency${exp.amount.round()} · ${exp.name}',
                       style: TextStyle(fontStyle: FontStyle.italic, fontSize: 13,
                         color: isDark ? AppColors.darkMuted : AppColors.muted),
                     )),
@@ -435,7 +420,6 @@ class _ExpensesTab extends StatelessWidget {
                 ),
               )
             else
-              // Swipeable expense row
               Dismissible(
                 key: Key(exp.id),
                 direction: DismissDirection.endToStart,
@@ -496,11 +480,12 @@ class _ExpensesTab extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('₹${exp.amount.round()}', style: const TextStyle(
+                            // <-- UPDATED CURRENCY -->
+                            Text('$currency${exp.amount.round()}', style: const TextStyle(
                               fontFamily: 'Nunito', fontSize: 16,
                               fontWeight: FontWeight.w900, color: AppColors.orange,
                             )),
-                            Text('₹${(exp.amount / exp.splitAmong.length).round()}/person',
+                            Text('$currency${(exp.amount / exp.splitAmong.length).round()}/person',
                               style: TextStyle(fontSize: 11,
                                 color: isDark ? AppColors.darkMuted : AppColors.muted)),
                             Text(DateFormat('hh:mm a').format(exp.date),
@@ -542,14 +527,13 @@ class _ExpensesTab extends StatelessWidget {
       ),
     );
     
-    // THE CLOUD UPDATE!
     if (result == true) {
       final db = DatabaseService();
       await db.deleteExpense(group.id, exp.id); 
       HapticFeedback.mediumImpact();
     }
     
-    return false; // We handle the dismissal manually via the StreamBuilder now
+    return false; 
   }
 
   void _openEditSheet(BuildContext context, Expense exp) {
@@ -571,7 +555,8 @@ class _BalancesTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Calculate net per member
+    final currency = context.watch<AppProvider>().currency; // <-- GET CURRENCY
+
     final net = <String, double>{};
     for (final m in group.members) net[m] = 0;
     for (final exp in group.activeExpenses) {
@@ -593,10 +578,12 @@ class _BalancesTab extends StatelessWidget {
             : bal < 0
                 ? AppColors.error
                 : isDark ? AppColors.darkMuted : AppColors.muted;
+        
+        // <-- UPDATED CURRENCY -->
         final label = bal > 0
-            ? 'gets back ₹$bal'
+            ? 'gets back $currency$bal'
             : bal < 0
-                ? 'owes ₹${bal.abs()}'
+                ? 'owes $currency${bal.abs()}'
                 : 'settled up ✓';
 
         return Container(
@@ -666,10 +653,9 @@ class _SettleUpTabState extends State<_SettleUpTab> {
     super.dispose();
   }
 
-  void _markFullSettled(int i) async {
+  void _markFullSettled(int i, String currency) async {
     final t = widget.balances[i];
     
-    // 1. Trigger your beautiful fade animation!
     setState(() => _settling[i] = true);
     await Future.delayed(const Duration(milliseconds: 400));
 
@@ -677,7 +663,6 @@ class _SettleUpTabState extends State<_SettleUpTab> {
     final to = t['to'] as String;
     final amount = t['amount'] as double;
 
-    // 2. Send the settlement to Firebase!
     final db = DatabaseService();
     await db.addSettlement(
       widget.group.id,
@@ -686,10 +671,9 @@ class _SettleUpTabState extends State<_SettleUpTab> {
       from,
       to,
       '✅',
-      '$from settled ₹${amount.round()} → $to'
+      '$from settled $currency${amount.round()} → $to' // <-- UPDATED CURRENCY
     );
 
-    // 3. Clear the animation and show toast
     if (mounted) {
       setState(() => _settling.remove(i)); 
       HapticFeedback.mediumImpact();
@@ -697,7 +681,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
     }
   }
 
-  void _markPartialSettled(int i) async {
+  void _markPartialSettled(int i, String currency) async {
     final t = widget.balances[i];
     final ctrl = _partialControllers[i];
     final partial = double.tryParse(ctrl?.text ?? '') ?? 0;
@@ -709,7 +693,6 @@ class _SettleUpTabState extends State<_SettleUpTab> {
     final from = t['from'] as String;
     final to = t['to'] as String;
 
-    // 1. Send the partial payment to Firebase!
     final db = DatabaseService();
     await db.addSettlement(
       widget.group.id,
@@ -718,15 +701,14 @@ class _SettleUpTabState extends State<_SettleUpTab> {
       from,
       to,
       '🔄',
-      '$from partially paid ₹${partial.round()} → $to'
+      '$from partially paid $currency${partial.round()} → $to' // <-- UPDATED CURRENCY
     );
 
-    // 2. Close the inline numpad and show toast
     if (mounted) {
       setState(() => _showPartial[i] = false);
       ctrl?.clear();
       HapticFeedback.mediumImpact();
-      _showToast('₹${partial.round()} recorded! 🔄');
+      _showToast('$currency${partial.round()} recorded! 🔄'); // <-- UPDATED CURRENCY
     }
   }
 
@@ -756,6 +738,8 @@ class _SettleUpTabState extends State<_SettleUpTab> {
 
   @override
   Widget build(BuildContext context) {
+    final currency = context.watch<AppProvider>().currency; // <-- GET CURRENCY
+
     if (widget.balances.isEmpty) {
       return Center(
         child: Column(
@@ -807,7 +791,6 @@ class _SettleUpTabState extends State<_SettleUpTab> {
               children: [
                 Row(
                   children: [
-                    // From avatar
                     Container(
                       width: 40, height: 40,
                       decoration: BoxDecoration(
@@ -823,7 +806,6 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                     const Icon(Icons.arrow_forward, color: AppColors.orange, size: 18),
                     const SizedBox(width: 8),
 
-                    // To avatar
                     Container(
                       width: 40, height: 40,
                       decoration: BoxDecoration(
@@ -837,7 +819,6 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                     ),
                     const SizedBox(width: 12),
 
-                    // Info
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -846,7 +827,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                             fontFamily: 'Nunito', fontWeight: FontWeight.w800,
                             fontSize: 14, color: textColor,
                           )),
-                          Text('₹$amount', style: const TextStyle(
+                          Text('$currency$amount', style: const TextStyle( // <-- UPDATED CURRENCY
                             fontFamily: 'Nunito', fontWeight: FontWeight.w900,
                             fontSize: 18, color: AppColors.orange,
                           )),
@@ -854,10 +835,9 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                       ),
                     ),
 
-                    // Buttons
                     Column(
                       children: [
-                        _settleBtn('Full ✓', AppColors.success, () => _markFullSettled(i)),
+                        _settleBtn('Full ✓', AppColors.success, () => _markFullSettled(i, currency)),
                         const SizedBox(height: 6),
                         _settleBtn('Partial', AppColors.orange, () {
                           setState(() => _showPartial[i] = !showPartial);
@@ -868,7 +848,6 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                   ],
                 ),
 
-                // Partial input
                 if (showPartial) ...[
                   const SizedBox(height: 12),
                   const Divider(),
@@ -890,7 +869,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                             ),
                             child: Row(
                               children: [
-                                const Text('₹', style: TextStyle(
+                                Text(currency, style: const TextStyle( // <-- UPDATED CURRENCY
                                   fontFamily: 'Nunito', fontWeight: FontWeight.w900,
                                   color: AppColors.orange, fontSize: 16,
                                 )),
@@ -911,7 +890,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                       ),
                       const SizedBox(width: 8),
                       GestureDetector(
-                        onTap: () => _markPartialSettled(i),
+                        onTap: () => _markPartialSettled(i, currency),
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                           decoration: BoxDecoration(
@@ -1003,7 +982,9 @@ class _PartialNumpadState extends State<_PartialNumpad> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.read<AppProvider>().isDark;
+    final provider = context.read<AppProvider>();
+    final isDark = provider.isDark;
+    final currency = provider.currency; // <-- GET CURRENCY
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final keyBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
@@ -1019,14 +1000,14 @@ class _PartialNumpadState extends State<_PartialNumpad> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text('Max: ₹${widget.max}', style: TextStyle(
+          Text('Max: $currency${widget.max}', style: TextStyle( // <-- UPDATED CURRENCY
             fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted,
           )),
           const SizedBox(height: 8),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              const Text('₹', style: TextStyle(
+              Text(currency, style: const TextStyle( // <-- UPDATED CURRENCY
                 fontFamily: 'Nunito', fontSize: 36,
                 fontWeight: FontWeight.w900, color: AppColors.orange,
               )),
@@ -1150,7 +1131,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
 
     setState(() => _error = null);
 
-    // 1. Send the edits straight to Firebase!
     final db = DatabaseService();
     await db.updateExpense(
       widget.groupId, 
@@ -1162,10 +1142,8 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
       _selectedCategory
     );
 
-    // 2. Safety check before closing
     if (!mounted) return;
 
-    // Notice: NO AppProvider code is here anymore! The StreamBuilder updates the UI automatically.
     HapticFeedback.mediumImpact();
     Navigator.pop(context);
   }
@@ -1187,6 +1165,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
+    final currency = provider.currency; // <-- GET CURRENCY
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
@@ -1219,7 +1198,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
             )),
             const SizedBox(height: 20),
 
-            // Category
             _label('CATEGORY'),
             const SizedBox(height: 8),
             Row(
@@ -1242,7 +1220,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Description
             _label('DESCRIPTION'),
             const SizedBox(height: 8),
             TextField(
@@ -1257,7 +1234,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Amount
             _label('AMOUNT'),
             const SizedBox(height: 8),
             GestureDetector(
@@ -1267,21 +1243,20 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
                 decoration: BoxDecoration(color: inputBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: borderColor)),
                 child: Row(
                   children: [
-                    const Text('₹', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.orange)),
+                    Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.orange)), // <-- UPDATED CURRENCY
                     const SizedBox(width: 8),
                     Expanded(child: Text(
                       _amountController.text.isEmpty ? 'Enter amount' : _amountController.text,
                       style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 16, color: textColor),
                     )),
                     if (_splitAmong.isNotEmpty && (double.tryParse(_amountController.text) ?? 0) > 0)
-                      Text('₹${share.round()}/person', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
+                      Text('$currency${share.round()}/person', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)), // <-- UPDATED CURRENCY
                   ],
                 ),
               ),
             ),
             const SizedBox(height: 16),
 
-            // Paid by
             _label('PAID BY'),
             const SizedBox(height: 8),
             Container(
@@ -1300,7 +1275,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
             ),
             const SizedBox(height: 16),
 
-            // Split among
             _label('SPLIT AMONG'),
             const SizedBox(height: 8),
             Wrap(
@@ -1326,7 +1300,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
             ),
             const SizedBox(height: 24),
 
-            // Error
             if (_error != null) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -1346,7 +1319,6 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
               const SizedBox(height: 12),
             ],
 
-            // Save button
             GestureDetector(
               onTap: _saveExpense,
               child: Container(

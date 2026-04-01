@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; // Add Firestore import
+import 'package:cloud_firestore/cloud_firestore.dart'; 
 import '../models/group.dart';
 import '../models/diary_entry.dart';
 import '../models/direct_payment.dart';
@@ -11,6 +11,8 @@ class AppProvider extends ChangeNotifier {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   bool _isDark = false;
+  String _currency = '₹'; // <-- NEW: Currency variable
+
   List<Group> _groups = [];
   List<DiaryCategory> _diaryCats = [];
   List<DiaryEntry> _diaryEntries = [];
@@ -24,6 +26,8 @@ class AppProvider extends ChangeNotifier {
 
   AppProvider(this._prefs) {
     _isDark = _prefs.getBool('isDark') ?? false;
+    _currency = _prefs.getString('currency') ?? '₹'; 
+    
     _listenToGroups();
     _listenToDiary();
     _listenToDirectPayments();
@@ -41,6 +45,8 @@ class AppProvider extends ChangeNotifier {
 
   // GETTERS
   bool get isDark => _isDark;
+  String get currency => _currency; 
+  
   List<Group> get groups => _groups;
   List<DiaryCategory> get diaryCats => _diaryCats;
   List<DiaryEntry> get diaryEntries => _diaryEntries;
@@ -51,6 +57,13 @@ class AppProvider extends ChangeNotifier {
     _isDark = !_isDark;
     _prefs.setBool('isDark', _isDark);
     notifyListeners();
+  }
+
+  // <-- NEW: CURRENCY ENGINE -->
+  void setCurrency(String newCurrency) {
+    _currency = newCurrency;
+    _prefs.setString('currency', _currency);
+    notifyListeners(); // This shouts to the whole app: "UPDATE THE UI!"
   }
 
   // ================= GROUPS =================

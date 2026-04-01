@@ -1,10 +1,14 @@
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; 
 import 'package:firebase_core/firebase_core.dart';
-import 'screens/login_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+import 'screens/login_screen.dart';
+import 'screens/profile_setup_screen.dart'; 
+import 'services/auth_service.dart';
 import 'providers/app_provider.dart';
 import 'screens/home_screen.dart';
 
@@ -32,17 +36,47 @@ class SplitSathiApp extends StatelessWidget {
       themeMode: provider.isDark ? ThemeMode.dark : ThemeMode.light,
       theme: _lightTheme(),
       darkTheme: _darkTheme(),
+      
+      // ---------------------------------------------------------
+      // THE NEW SMART GATEKEEPER
+      // ---------------------------------------------------------
       home: StreamBuilder<User?>(
-        stream: FirebaseAuth.instance.authStateChanges(),
-        builder: (context, snapshot) {
-          // If Firebase says we have a logged-in user, go straight to Home!
-          if (snapshot.hasData) {
-            return const HomeScreen();
+        // 1. Check if they are logged in at all
+        stream: AuthService().authStateChanges,
+        builder: (context, authSnapshot) {
+          if (authSnapshot.connectionState == ConnectionState.waiting) {
+            return const Scaffold(body: Center(child: CircularProgressIndicator()));
           }
-          // Otherwise, show them the Login Screen
-          return const LoginScreen();
+          
+          // 2. If they are NOT logged in, show the Login Screen
+          if (!authSnapshot.hasData || authSnapshot.data == null) {
+            return const LoginScreen();
+          }
+
+          // 3. If they ARE logged in, check their Firestore profile!
+          return StreamBuilder<DocumentSnapshot>(
+            stream: FirebaseFirestore.instance.collection('users').doc(authSnapshot.data!.uid).snapshots(),
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
+                return const Scaffold(body: Center(child: CircularProgressIndicator()));
+              }
+
+              // 4. Check if the profile exists AND is marked as complete
+              if (userSnapshot.hasData && userSnapshot.data!.exists) {
+                final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
+                if (userData != null && userData['profileComplete'] == true) {
+                  // They are fully set up! Let them into the app.
+                  return const HomeScreen();
+                }
+              }
+
+              // 5. If their profile is missing or incomplete, trap them on the Setup Screen!
+              return const ProfileSetupScreen();
+            },
+          );
         },
       ),
+      // ---------------------------------------------------------
     );
   }
 

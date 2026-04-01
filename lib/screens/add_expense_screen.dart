@@ -8,7 +8,7 @@ import '../services/db_service.dart';
 
 class AddExpenseSheet extends StatefulWidget {
   final String groupId;
-  final List<String> members; // <--- NEW: We require the members list now
+  final List<String> members; 
   const AddExpenseSheet({super.key, required this.groupId, required this.members});
 
   @override
@@ -25,7 +25,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   @override
   void initState() {
     super.initState();
-    // Use the passed members list instead of asking AppProvider!
     _paidBy = widget.members.contains('You') ? 'You' : widget.members.first;
     _splitAmong = List.from(widget.members); 
   }
@@ -59,11 +58,9 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
 
     setState(() => _error = null);
 
-    // 1. Send it directly to Firebase!
     final db = DatabaseService();
     await db.addExpense(widget.groupId, name, amount, _paidBy!, _splitAmong, _selectedCategory);
 
-    // 2. Safety check
     if (!mounted) return;
 
     HapticFeedback.mediumImpact();
@@ -99,7 +96,8 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   Widget build(BuildContext context) {
     final provider = context.watch<AppProvider>();
     final isDark = provider.isDark;
-    //final group = provider.groups.firstWhere((g) => g.id == widget.groupId);
+    final currency = provider.currency; // <-- GET DYNAMIC CURRENCY
+    
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
@@ -122,7 +120,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Handle
             Center(child: Container(
               width: 40, height: 4,
               decoration: BoxDecoration(
@@ -132,14 +129,12 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             )),
             const SizedBox(height: 16),
 
-            // Title
             Text('Add Expense', style: TextStyle(
               fontFamily: 'Nunito', fontSize: 22,
               fontWeight: FontWeight.w900, color: textColor,
             )),
             const SizedBox(height: 20),
 
-            // Category icons
             _label('CATEGORY'),
             const SizedBox(height: 8),
             Row(
@@ -168,7 +163,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Description
             _label('DESCRIPTION'),
             const SizedBox(height: 8),
             TextField(
@@ -199,7 +193,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Amount
             _label('AMOUNT'),
             const SizedBox(height: 8),
             GestureDetector(
@@ -213,7 +206,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                 ),
                 child: Row(
                   children: [
-                    Text('₹', style: TextStyle(
+                    Text(currency, style: const TextStyle( // <-- UPDATED DYNAMIC CURRENCY
                       fontFamily: 'Nunito',
                       fontWeight: FontWeight.w900,
                       fontSize: 20,
@@ -234,7 +227,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                       ),
                     ),
                     if (_splitAmong.isNotEmpty && (double.tryParse(_amountController.text) ?? 0) > 0)
-                      Text('₹${share.round()}/person',
+                      Text('$currency${share.round()}/person', // <-- UPDATED DYNAMIC CURRENCY
                         style: TextStyle(
                           fontSize: 12,
                           color: isDark ? AppColors.darkMuted : AppColors.muted,
@@ -245,7 +238,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Paid by
             _label('PAID BY'),
             const SizedBox(height: 8),
             Container(
@@ -276,7 +268,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             ),
             const SizedBox(height: 20),
 
-            // Split among
             _label('SPLIT AMONG'),
             const SizedBox(height: 8),
             Wrap(
@@ -309,7 +300,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             ),
             const SizedBox(height: 24),
 
-            // Inline error
             if (_error != null) ...[
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -332,7 +322,6 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
               const SizedBox(height: 12),
             ],
 
-            // Save button
             GestureDetector(
               onTap: _saveExpense,
               child: Container(
@@ -408,7 +397,10 @@ class _NumpadSheetState extends State<_NumpadSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = context.read<AppProvider>().isDark;
+    final provider = context.read<AppProvider>();
+    final isDark = provider.isDark;
+    final currency = provider.currency; // <-- GET DYNAMIC CURRENCY
+    
     final bg = isDark ? AppColors.darkSurface : Colors.white;
     final keyBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
@@ -428,7 +420,7 @@ class _NumpadSheetState extends State<_NumpadSheet> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text('₹', style: const TextStyle(
+              Text(currency, style: const TextStyle( // <-- UPDATED DYNAMIC CURRENCY
                 fontFamily: 'Nunito', fontSize: 36,
                 fontWeight: FontWeight.w900, color: AppColors.orange,
               )),

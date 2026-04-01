@@ -94,4 +94,28 @@ class DatabaseService {
       debugPrint("Error saving settlement: $e");
     }
   }
+
+  // 9. Update an existing group
+  Future<void> updateGroup(String groupId, String name, String emoji, List<String> members) async {
+    try {
+      await _db.collection('groups').doc(groupId).update({
+        'name': name,
+        'emoji': emoji,
+        'members': members,
+      });
+      debugPrint("Success: Group updated in cloud!");
+    } catch (e) {
+      debugPrint("Error updating group: $e");
+    }
+  }
+
+  // 10. Delete a group forever
+  Future<void> deleteGroup(String groupId) async {
+    try {
+      await _db.collection('groups').doc(groupId).delete();
+      debugPrint("Success: Group deleted from cloud!");
+    } catch (e) {
+      debugPrint("Error deleting group: $e");
+    }
+  }
 }

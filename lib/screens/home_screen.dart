@@ -1,3 +1,4 @@
+import '../services/db_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/app_drawer.dart';
 import 'package:flutter/material.dart';
@@ -64,6 +65,9 @@ class HomeScreen extends StatelessWidget {
 
   // ── SECTION 1: HEADER ──────────────────────────────────────────
   Widget _buildHeader(BuildContext context, AppProvider provider, bool isDark) {
+    // <-- NEW: Grab the live currency from the provider! -->
+    final currency = provider.currency;
+
     // Calculate balances
     double totalOwe = 0;
     double totalReceive = 0;
@@ -88,12 +92,12 @@ class HomeScreen extends StatelessWidget {
       ),
       child: Stack(
         children: [
-          // ₹ watermark
+          // Dynamic Currency Watermark
           Positioned(
             right: -10,
             top: -20,
             child: Text(
-              '₹',
+              currency, // <-- DYNAMIC CURRENCY
               style: TextStyle(
                 fontSize: 130,
                 color: Colors.white.withOpacity(0.07),
@@ -111,15 +115,10 @@ class HomeScreen extends StatelessWidget {
                 children: [
                   Row(
                     children: [
-                      // ==========================================
-                      // THE FIX IS HERE: The Builder gives us the 
-                      // correct context to open the Drawer!
-                      // ==========================================
                       Builder(
                         builder: (BuildContext innerContext) {
                           return GestureDetector(
                             onTap: () {
-                              // Now it uses innerContext instead of context!
                               Scaffold.of(innerContext).openDrawer();
                             },
                             child: const Padding(
@@ -133,7 +132,6 @@ class HomeScreen extends StatelessWidget {
                           );
                         },
                       ),
-                      // ==========================================
 
                       RichText(
                         text: const TextSpan(
@@ -208,11 +206,12 @@ class HomeScreen extends StatelessWidget {
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.spaceAround,
                   children: [
-                    _balanceItem('YOU OWE', '₹${totalOwe.round()}', const Color(0xFFFECACA)),
-                    _balanceItem('YOU GET', '₹${totalReceive.round()}', const Color(0xFFBBF7D0)),
+                    // <-- DYNAMIC CURRENCY injected into the strings! -->
+                    _balanceItem('YOU OWE', '$currency${totalOwe.round()}', const Color(0xFFFECACA)),
+                    _balanceItem('YOU GET', '$currency${totalReceive.round()}', const Color(0xFFBBF7D0)),
                     _balanceItem(
                       'NET',
-                      '${net >= 0 ? '+' : ''}₹${net.round()}',
+                      '${net >= 0 ? '+' : ''}$currency${net.round()}',
                       Colors.white,
                     ),
                   ],
@@ -331,27 +330,29 @@ class HomeScreen extends StatelessWidget {
   // ── SECTION 3: GROUPS LIST ─────────────────────────────────────
   Widget _buildGroupsList(BuildContext context, AppProvider provider, bool isDark) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 80),
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 80), 
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'YOUR GROUPS',
-            style: TextStyle(
-              fontFamily: 'Nunito',
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-              color: AppColors.orange,
-              letterSpacing: 1,
+          const Padding(
+            padding: EdgeInsets.only(left: 4.0),
+            child: Text(
+              'YOUR GROUPS',
+              style: TextStyle(
+                fontFamily: 'Nunito',
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: AppColors.orange,
+                letterSpacing: 1,
+              ),
             ),
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
 
           // Live Database Listener
           StreamBuilder<QuerySnapshot>(
             stream: FirebaseFirestore.instance.collection('groups').orderBy('createdAt', descending: true).snapshots(),
             builder: (context, snapshot) {
-              // 1. Show a loading spinner while waiting for the internet
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(
                   child: Padding(
@@ -361,15 +362,12 @@ class HomeScreen extends StatelessWidget {
                 );
               }
 
-              // 2. Grab the actual list of documents from the cloud
               final docs = snapshot.data?.docs ?? [];
 
-              // 3. If the database is empty, use YOUR beautiful empty state!
               if (docs.isEmpty) {
                 return _buildEmptyState(isDark);
               }
 
-              // 4. If we have groups, build the list safely using a Column
               return Column(
                 children: docs.map((doc) {
                   final data = doc.data() as Map<String, dynamic>;
@@ -377,56 +375,69 @@ class HomeScreen extends StatelessWidget {
                   final String emoji = data['emoji'] ?? '👥';
                   final List members = data['members'] ?? [];
 
-                  return Container(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkSurface : Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(color: isDark ? AppColors.darkBorder : AppColors.border),
-                    ),
-                    child: ListTile(
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                      leading: Container(
-                        width: 48, 
-                        height: 48,
-                        decoration: BoxDecoration(
-                          color: isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED),
-                          borderRadius: BorderRadius.circular(12),
+                  final groupObj = Group(
+                    id: doc.id,
+                    name: name,
+                    emoji: emoji,
+                    members: List<String>.from(members),
+                    expenses: [], 
+                    createdAt: DateTime.now(), 
+                  );
+
+                  return Column(
+                    children: [
+                      ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                        leading: CircleAvatar(
+                          radius: 26,
+                          backgroundColor: isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED),
+                          child: Text(emoji, style: const TextStyle(fontSize: 24)),
                         ),
-                        child: Center(child: Text(emoji, style: const TextStyle(fontSize: 24))),
-                      ),
-                      title: Text(
-                        name,
-                        style: TextStyle(
-                          fontFamily: 'Nunito',
-                          fontWeight: FontWeight.w800,
-                          fontSize: 16,
-                          color: isDark ? Colors.white : const Color(0xFF1C1C1C),
+                        title: Text(
+                          name,
+                          style: TextStyle(
+                            fontFamily: 'Nunito',
+                            fontWeight: FontWeight.w800,
+                            fontSize: 17,
+                            color: isDark ? Colors.white : const Color(0xFF1C1C1C),
+                          ),
                         ),
-                      ),
-                      subtitle: Text(
-                        '${members.length} members',
-                        style: TextStyle(
-                          fontFamily: 'Nunito',
-                          fontWeight: FontWeight.w600,
-                          color: isDark ? AppColors.darkMuted : AppColors.muted,
-                        ),
-                      ),
-                      trailing: Icon(
-                        Icons.chevron_right, 
-                        color: isDark ? AppColors.darkMuted : AppColors.muted
-                      ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => GroupDetailScreen(
-                              groupId: doc.id, // Only passing the ID now!
+                        subtitle: Padding(
+                          padding: const EdgeInsets.only(top: 4.0),
+                          child: Text(
+                            '${members.length} members',
+                            style: TextStyle(
+                              fontFamily: 'Nunito',
+                              fontWeight: FontWeight.w600,
+                              fontSize: 13,
+                              color: isDark ? AppColors.darkMuted : AppColors.muted,
                             ),
                           ),
-                        );
-                      },
-                    ),
+                        ),
+                        onTap: () {
+                          HapticFeedback.lightImpact();
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => GroupDetailScreen(
+                                groupId: doc.id, 
+                              ),
+                            ),
+                          );
+                        },
+                        onLongPress: () {
+                          HapticFeedback.heavyImpact();
+                          _showContextMenu(context, groupObj, isDark);
+                        },
+                      ),
+                      Divider(
+                        height: 1,
+                        thickness: 1,
+                        color: (isDark ? AppColors.darkBorder : AppColors.border).withOpacity(0.5),
+                        indent: 68, 
+                        endIndent: 4,
+                      ),
+                    ],
                   );
                 }).toList(),
               );
@@ -438,6 +449,9 @@ class HomeScreen extends StatelessWidget {
   }
 
   Widget _buildGroupRow(BuildContext context, Group group, bool isDark) {
+    // <-- NEW: Fetch currency for this row specifically -->
+    final currency = context.watch<AppProvider>().currency;
+
     // Calculate my balance in this group
     final balances = _calcBalances(group);
     double myBalance = 0;
@@ -452,10 +466,11 @@ class HomeScreen extends StatelessWidget {
             ? AppColors.error
             : AppColors.muted;
 
+    // <-- DYNAMIC CURRENCY injected into the group balances! -->
     final balanceText = myBalance > 0
-        ? '+₹${myBalance.round()}'
+        ? '+$currency${myBalance.round()}'
         : myBalance < 0
-            ? '-₹${myBalance.abs().round()}'
+            ? '-$currency${myBalance.abs().round()}'
             : '✓';
 
     final date = DateFormat('d MMM').format(group.lastActivity);
@@ -718,9 +733,9 @@ class HomeScreen extends StatelessWidget {
             child: const Text('Cancel', style: TextStyle(color: AppColors.muted)),
           ),
           TextButton(
-            onPressed: () {
-              context.read<AppProvider>().deleteGroup(group.id);
-              Navigator.pop(context);
+            onPressed: () async {
+              await DatabaseService().deleteGroup(group.id);
+              if (context.mounted) Navigator.pop(context);
             },
             child: const Text('Delete', style: TextStyle(color: AppColors.error)),
           ),
@@ -728,6 +743,7 @@ class HomeScreen extends StatelessWidget {
       ),
     );
   }
+
   List<Map<String, dynamic>> _calcBalances(Group group) {
     final net = <String, double>{};
     for (final m in group.members) {
@@ -803,14 +819,18 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
     _memberController.clear();
   }
 
-  void _save() {
+  void _save() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
-    widget.group.name = name;
-    widget.group.emoji = _selectedEmoji;
-    widget.group.members = _members;
-    context.read<AppProvider>().updateGroup(widget.group);
-    Navigator.pop(context);
+    
+    await DatabaseService().updateGroup(
+      widget.group.id, 
+      name, 
+      _selectedEmoji, 
+      _members
+    );
+    
+    if (mounted) Navigator.pop(context);
   }
 
   @override
