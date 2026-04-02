@@ -28,7 +28,6 @@ SplitSathi is a full-stack, cross-platform mobile application designed to take t
 |:---:|:---:|:---:|:---:|
 | <img src="assets/screenshots/home.png" width="250"> | <img src="assets/screenshots/group.png" width="250"> | <img src="assets/screenshots/friends.png" width="250"> | <img src="assets/screenshots/payment.png" width="250"> |
 
-*(Note: Replace the image paths above with your actual uploaded screenshot names!)*
 
 ---
 
