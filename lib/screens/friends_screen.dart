@@ -1,103 +1,53 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../providers/app_provider.dart';
-import '../models/group.dart';
-import '../models/direct_payment.dart';
+import '../services/auth_service.dart';
 import '../utils/constants.dart';
+import '../models/group.dart';
 
-class FriendsScreen extends StatefulWidget {
-  const FriendsScreen({super.key});
-
-  @override
-  State<FriendsScreen> createState() => _FriendsScreenState();
+DateTime _parseDate(dynamic val) {
+  if (val == null) return DateTime.now();
+  if (val is Timestamp) return val.toDate();
+  if (val is String) return DateTime.tryParse(val) ?? DateTime.now();
+  return DateTime.now();
 }
 
-class _FriendsScreenState extends State<FriendsScreen> {
-  final _searchController = TextEditingController();
-  String _search = '';
+class FriendData {
+  final String name;
+  final List<String> sharedGroups;
+  double netBalance; 
+  DateTime lastActivity;
+
+  FriendData({
+    required this.name,
+    required this.sharedGroups,
+    required this.netBalance,
+    required this.lastActivity,
+  });
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// 1. FLOATING FRIENDS PANEL
+// ════════════════════════════════════════════════════════════════════════════
+class FriendsPanel extends StatefulWidget {
+  const FriendsPanel({super.key});
+  @override
+  State<FriendsPanel> createState() => _FriendsPanelState();
+}
+
+class _FriendsPanelState extends State<FriendsPanel> {
+  final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
   @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  void dispose() { _searchController.dispose(); super.dispose(); }
 
-  // Get all friends from groups + direct payments
-  List<_FriendSummary> _getAllFriends(AppProvider provider) {
-    final map = <String, _FriendSummary>{};
-
-    // From groups
-    for (final g in provider.groups) {
-      for (final m in g.members) {
-        if (m == 'You') continue;
-        if (!map.containsKey(m)) {
-          map[m] = _FriendSummary(name: m, groupNames: [], net: 0, lastActivity: null);
-        }
-        map[m]!.groupNames.add(g.name);
-        final lastExp = g.expenses.isNotEmpty ? g.expenses.last.date : null;
-        if (lastExp != null) {
-          if (map[m]!.lastActivity == null || lastExp.isAfter(map[m]!.lastActivity!)) {
-            map[m]!.lastActivity = lastExp;
-          }
-        }
-      }
-    }
-
-    // From direct payments
-    for (final p in provider.directPayments) {
-      if (!map.containsKey(p.friend)) {
-        map[p.friend] = _FriendSummary(name: p.friend, groupNames: [], net: 0, lastActivity: null);
-      }
-      if (map[p.friend]!.lastActivity == null ||
-          p.date.isAfter(map[p.friend]!.lastActivity!)) {
-        map[p.friend]!.lastActivity = p.date;
-      }
-    }
-
-    // Calculate net for each friend
-    for (final name in map.keys) {
-      map[name]!.net = _getFriendNet(name, provider);
-    }
-
-    // Sort: unsettled first, then by recent activity
-    final list = map.values.toList();
-    list.sort((a, b) {
-      final aSettled = a.net == 0;
-      final bSettled = b.net == 0;
-      if (aSettled != bSettled) return aSettled ? 1 : -1;
-      final aTime = a.lastActivity?.millisecondsSinceEpoch ?? 0;
-      final bTime = b.lastActivity?.millisecondsSinceEpoch ?? 0;
-      return bTime - aTime;
-    });
-
-    return list;
-  }
-
-  double _getFriendNet(String friendName, AppProvider provider) {
-    double net = 0;
-
-    // From groups
-    for (final g in provider.groups) {
-      if (!g.members.contains(friendName)) continue;
-      final balances = _calcGroupBalances(g);
-      for (final t in balances) {
-        if (t['from'] == friendName && t['to'] == 'You') net += t['amount'] as double;
-        if (t['from'] == 'You' && t['to'] == friendName) net -= t['amount'] as double;
-      }
-    }
-
-    // From direct payments
-    for (final p in provider.directPayments.where((p) => p.friend == friendName)) {
-      if (p.youPaid) net += p.amount;
-      else net -= p.amount;
-    }
-
-    return net;
-  }
-
-  List<Map<String, dynamic>> _calcGroupBalances(Group group) {
+  List<Map<String, dynamic>> _calcBalances(Group group) {
     final net = <String, double>{};
     for (final m in group.members) net[m] = 0;
     for (final exp in group.activeExpenses) {
@@ -110,1038 +60,458 @@ class _FriendsScreenState extends State<FriendsScreen> {
     final creditors = net.entries.where((e) => e.value > 0.01).map((e) => {'name': e.key, 'amt': e.value}).toList();
     int i = 0, j = 0;
     while (i < debtors.length && j < creditors.length) {
-      final pay = (debtors[i]['amt'] as double) < (creditors[j]['amt'] as double)
-          ? debtors[i]['amt'] as double : creditors[j]['amt'] as double;
+      final pay = (debtors[i]['amt'] as double) < (creditors[j]['amt'] as double) ? debtors[i]['amt'] as double : creditors[j]['amt'] as double;
       if (pay > 0.01) transactions.add({'from': debtors[i]['name'], 'to': creditors[j]['name'], 'amount': pay});
-      debtors[i]['amt'] = (debtors[i]['amt'] as double) - pay;
-      creditors[j]['amt'] = (creditors[j]['amt'] as double) - pay;
-      if ((debtors[i]['amt'] as double) < 0.01) i++;
-      if ((creditors[j]['amt'] as double) < 0.01) j++;
+      debtors[i]['amt'] = (debtors[i]['amt'] as double) - pay; creditors[j]['amt'] = (creditors[j]['amt'] as double) - pay;
+      if ((debtors[i]['amt'] as double) < 0.01) i++; if ((creditors[j]['amt'] as double) < 0.01) j++;
     }
     return transactions;
+  }
+
+  Future<List<FriendData>> _fetchLiveFriends(List<QueryDocumentSnapshot> directDocs) async {
+    Map<String, FriendData> friendMap = {};
+    final groupQuery = await FirebaseFirestore.instance.collection('groups').where('members', arrayContains: 'You').get();
+
+    for (var gDoc in groupQuery.docs) {
+      final gData = gDoc.data();
+      final groupName = gData['name'] ?? 'Unnamed';
+      final members = List<String>.from(gData['members'] ?? []);
+      final createdAt = _parseDate(gData['createdAt']);
+
+      for (var m in members) {
+        if (m != 'You') {
+          if (!friendMap.containsKey(m)) friendMap[m] = FriendData(name: m, sharedGroups: [], netBalance: 0, lastActivity: createdAt);
+          if (!friendMap[m]!.sharedGroups.contains(groupName)) friendMap[m]!.sharedGroups.add(groupName);
+        }
+      }
+
+      final expQuery = await FirebaseFirestore.instance.collection('groups').doc(gDoc.id).collection('expenses').get();
+      final net = <String, double>{};
+      for (final m in members) net[m] = 0;
+
+      for (var expDoc in expQuery.docs) {
+        final exp = expDoc.data();
+        if (exp['deleted'] == true || exp['isGhost'] == true) continue;
+        final amount = (exp['amount'] as num).toDouble();
+        final splitAmong = List<String>.from(exp['splitAmong'] ?? []);
+        final paidBy = exp['paidBy'] as String;
+        final share = amount / splitAmong.length;
+        net[paidBy] = (net[paidBy] ?? 0) + amount;
+        for (final m in splitAmong) net[m] = (net[m] ?? 0) - share;
+      }
+
+      final debtors = net.entries.where((e) => e.value < -0.01).map((e) => {'name': e.key, 'amt': -e.value}).toList();
+      final creditors = net.entries.where((e) => e.value > 0.01).map((e) => {'name': e.key, 'amt': e.value}).toList();
+      int i = 0, j = 0;
+      while (i < debtors.length && j < creditors.length) {
+        final pay = (debtors[i]['amt'] as double) < (creditors[j]['amt'] as double) ? debtors[i]['amt'] as double : creditors[j]['amt'] as double;
+        if (pay > 0.01) {
+          final from = debtors[i]['name'] as String;
+          final to = creditors[j]['name'] as String;
+          if (from == 'You' && friendMap.containsKey(to)) friendMap[to]!.netBalance -= pay;
+          else if (to == 'You' && friendMap.containsKey(from)) friendMap[from]!.netBalance += pay;
+        }
+        debtors[i]['amt'] = (debtors[i]['amt'] as double) - pay; creditors[j]['amt'] = (creditors[j]['amt'] as double) - pay;
+        if ((debtors[i]['amt'] as double) < 0.01) i++; if ((creditors[j]['amt'] as double) < 0.01) j++;
+      }
+    }
+
+    for (var doc in directDocs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final fName = data['friendName'] as String;
+      final date = _parseDate(data['date']);
+
+      if (!friendMap.containsKey(fName)) friendMap[fName] = FriendData(name: fName, sharedGroups: [], netBalance: 0, lastActivity: date);
+      if (date.isAfter(friendMap[fName]!.lastActivity)) friendMap[fName]!.lastActivity = date;
+
+      double amt = (data['amount'] as num).toDouble();
+      if (data['youPaid'] == true) friendMap[fName]!.netBalance += amt;
+      else friendMap[fName]!.netBalance -= amt;
+    }
+    return friendMap.values.toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AppProvider>();
-    final isDark = provider.isDark;
-    final bg = isDark ? AppColors.darkBg : AppColors.cream;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final inputBg = isDark ? AppColors.darkSurface2 : Colors.white;
+    final isDark = context.watch<AppProvider>().isDark; final currency = context.watch<AppProvider>().currency; final surface = isDark ? AppColors.darkSurface : Colors.white; final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C); final borderColor = isDark ? AppColors.darkBorder : AppColors.border; final myUid = AuthService().currentUser?.uid ?? '';
 
-    var friends = _getAllFriends(provider);
-    if (_search.isNotEmpty) {
-      friends = friends.where((f) => f.name.toLowerCase().contains(_search.toLowerCase())).toList();
-    }
-
-    final unsettled = friends.where((f) => f.net != 0).toList();
-    final settled = friends.where((f) => f.net == 0).toList();
-
-    return Scaffold(
-      backgroundColor: bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFFF97316), Color(0xFFEA580C)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      GestureDetector(
-                        onTap: () => Navigator.pop(context),
-                        child: const Icon(Icons.arrow_back, color: Colors.white),
-                      ),
-                      const SizedBox(width: 12),
-                      const Text('👥 Friends', style: TextStyle(
-                        fontFamily: 'Nunito', fontSize: 22,
-                        fontWeight: FontWeight.w900, color: Colors.white,
-                      )),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  // Search
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: TextField(
-                      controller: _searchController,
-                      onChanged: (v) => setState(() => _search = v),
-                      style: const TextStyle(color: Colors.white, fontFamily: 'Nunito'),
-                      decoration: const InputDecoration(
-                        hintText: 'Search friends...',
-                        hintStyle: TextStyle(color: Colors.white60),
-                        border: InputBorder.none,
-                        icon: Icon(Icons.search, color: Colors.white70),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
+    return Container(
+      width: 320, constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7),
+      decoration: BoxDecoration(color: surface, borderRadius: BorderRadius.circular(24), border: Border.all(color: borderColor), boxShadow: [BoxShadow(color: AppColors.orange.withOpacity(0.12), blurRadius: 40, offset: const Offset(0, 10))]),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('👥 Friends', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w800, color: textColor)), GestureDetector(onTap: () => Navigator.pop(context), child: Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.close, size: 16, color: AppColors.muted)))]),
+                const SizedBox(height: 12),
+                TextField(controller: _searchController, onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()), style: TextStyle(color: textColor, fontFamily: 'Nunito', fontSize: 14), decoration: InputDecoration(hintText: 'Search friends...', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: isDark ? AppColors.darkSurface2 : Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))),
+              ],
             ),
+          ),
+          Flexible(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('direct_payments').where('userId', isEqualTo: myUid).snapshots(),
+              builder: (context, directSnapshot) {
+                return FutureBuilder<List<FriendData>>(
+                  future: _fetchLiveFriends(directSnapshot.data?.docs ?? []),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) return const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: AppColors.orange));
+                    List<FriendData> allFriends = snapshot.data ?? [];
+                    if (_searchQuery.isNotEmpty) allFriends = allFriends.where((f) => f.name.toLowerCase().contains(_searchQuery)).toList();
+                    if (allFriends.isEmpty) return Padding(padding: const EdgeInsets.symmetric(vertical: 20), child: Text('No friends found', style: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted, fontSize: 13)));
 
-            // Friends list
-            Expanded(
-              child: friends.isEmpty
-                  ? Center(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Text('👥', style: TextStyle(fontSize: 48)),
-                          const SizedBox(height: 16),
-                          Text('No friends yet', style: TextStyle(
-                            fontFamily: 'Nunito', fontSize: 18,
-                            fontWeight: FontWeight.w800, color: textColor,
-                          )),
-                          const SizedBox(height: 8),
-                          Text('Add members to a group\nor record a direct payment',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 14,
-                              color: isDark ? AppColors.darkMuted : AppColors.muted,
-                            )),
-                        ],
-                      ),
-                    )
-                  : ListView(
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
+                    allFriends.sort((a, b) => b.lastActivity.compareTo(a.lastActivity));
+                    final unsettled = allFriends.where((f) => f.netBalance.abs() > 0.01).toList();
+                    final settled = allFriends.where((f) => f.netBalance.abs() <= 0.01).toList();
+
+                    return ListView(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12), shrinkWrap: true,
                       children: [
-                        if (unsettled.isNotEmpty) ...[
-                          ...unsettled.map((f) => _buildFriendRow(context, f, isDark, textColor, borderColor)),
-                        ],
-                        if (settled.isNotEmpty) ...[
-                          if (unsettled.isNotEmpty) ...[
-                            const SizedBox(height: 8),
-                            Row(children: [
-                              Expanded(child: Divider(color: borderColor)),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
-                                child: Text('Settled Up', style: TextStyle(
-                                  fontSize: 11, fontWeight: FontWeight.w700,
-                                  color: isDark ? AppColors.darkMuted : AppColors.muted,
-                                )),
-                              ),
-                              Expanded(child: Divider(color: borderColor)),
-                            ]),
-                            const SizedBox(height: 8),
-                          ],
-                          ...settled.map((f) => _buildFriendRow(context, f, isDark, textColor, borderColor)),
-                        ],
+                        if (unsettled.isNotEmpty) ...unsettled.map((f) => _buildFriendRow(f, currency, isDark, textColor)),
+                        if (unsettled.isNotEmpty && settled.isNotEmpty) ...[Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Divider(color: borderColor, height: 1)), Padding(padding: const EdgeInsets.only(bottom: 8, left: 4), child: Text('SETTLED', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.5, color: isDark ? AppColors.darkMuted : AppColors.muted)))],
+                        if (settled.isNotEmpty) ...settled.map((f) => _buildFriendRow(f, currency, isDark, textColor)),
                       ],
-                    ),
+                    );
+                  }
+                );
+              },
             ),
-          ],
-        ),
-      ),
-
-      // FAB — Add new direct friend
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showNewDirectFriend(context, isDark),
-        backgroundColor: AppColors.orange,
-        child: const Icon(Icons.person_add, color: Colors.white),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: GestureDetector(
+              onTap: () { Navigator.pop(context); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => const _NewDirectPaymentSheet()); },
+              child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(12)), child: const Center(child: Text('+ Record New Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)))),
+            ),
+          )
+        ],
       ),
     );
   }
 
-  Widget _buildFriendRow(BuildContext context, _FriendSummary friend,
-      bool isDark, Color textColor, Color borderColor) {
-    final net = friend.net;
-    final color = net > 0 ? AppColors.success : net < 0 ? AppColors.error : AppColors.muted;
-    final label = net > 0
-        ? 'owes you ₹${net.round()}'
-        : net < 0
-            ? 'you owe ₹${net.abs().round()}'
-            : 'settled ✓';
-    final idx = friend.name.codeUnitAt(0) % AppConstants.avatarColors.length;
+  Widget _buildFriendRow(FriendData friend, String currency, bool isDark, Color textColor) {
+    String balanceText = 'settled ✓'; Color balanceColor = isDark ? AppColors.darkMuted : AppColors.muted;
+    if (friend.netBalance > 0.01) { balanceText = 'owes you $currency${friend.netBalance.round()}'; balanceColor = AppColors.success; } 
+    else if (friend.netBalance < -0.01) { balanceText = 'you owe $currency${friend.netBalance.abs().round()}'; balanceColor = AppColors.error; }
 
     return GestureDetector(
-      onTap: () {
-        Navigator.push(context, MaterialPageRoute(
-          builder: (_) => FriendDetailScreen(friendName: friend.name),
-        ));
-      },
+      onTap: () { HapticFeedback.lightImpact(); Navigator.pop(context); Navigator.push(context, MaterialPageRoute(builder: (_) => FriendDetailScreen(friend: friend))); },
       child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
-        decoration: BoxDecoration(
-          border: Border(bottom: BorderSide(color: borderColor)),
-        ),
+        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8), decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
         child: Row(
           children: [
-            Container(
-              width: 44, height: 44,
-              decoration: BoxDecoration(
-                color: AppConstants.getAvatarColor(idx),
-                borderRadius: BorderRadius.circular(13),
-              ),
-              child: Center(child: Text(
-                friend.name[0].toUpperCase(),
-                style: const TextStyle(
-                  fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                  color: Colors.white, fontSize: 18,
-                ),
-              )),
-            ),
+            Container(width: 38, height: 38, decoration: BoxDecoration(color: AppConstants.getAvatarColor(friend.name.length), borderRadius: BorderRadius.circular(12)), child: Center(child: Text(friend.name[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w900, color: Colors.white)))),
             const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(friend.name, style: TextStyle(
-                    fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                    fontSize: 15, color: textColor,
-                  )),
-                  if (friend.groupNames.isNotEmpty)
-                    Text(friend.groupNames.join(', '), style: TextStyle(
-                      fontSize: 11,
-                      color: isDark ? AppColors.darkMuted : AppColors.muted,
-                    )),
-                ],
-              ),
-            ),
-            Text(label, style: TextStyle(
-              fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-              fontSize: 13, color: color,
-            )),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(friend.name, style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w700, color: textColor)), Text(friend.sharedGroups.isNotEmpty ? friend.sharedGroups.join(', ') : 'Direct', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkMuted : AppColors.muted))])),
+            Text(balanceText, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 13, color: balanceColor)),
           ],
         ),
       ),
-    );
-  }
-
-  void _showNewDirectFriend(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => const _NewDirectFriendSheet(),
     );
   }
 }
 
-// ── FRIEND DETAIL SCREEN ───────────────────────────────────────────
-class FriendDetailScreen extends StatelessWidget {
-  final String friendName;
-  const FriendDetailScreen({super.key, required this.friendName});
+// ════════════════════════════════════════════════════════════════════════════
+// 2. FRIEND DETAIL SCREEN (Matches the HTML Mockup Perfectly)
+// ════════════════════════════════════════════════════════════════════════════
+class FriendDetailScreen extends StatefulWidget {
+  final FriendData friend;
+  const FriendDetailScreen({super.key, required this.friend});
+  @override
+  State<FriendDetailScreen> createState() => _FriendDetailScreenState();
+}
 
-  List<Map<String, dynamic>> _calcGroupBalances(Group group) {
-    final net = <String, double>{};
-    for (final m in group.members) net[m] = 0;
-    for (final exp in group.activeExpenses) {
-      final share = exp.amount / exp.splitAmong.length;
-      net[exp.paidBy] = (net[exp.paidBy] ?? 0) + exp.amount;
-      for (final m in exp.splitAmong) net[m] = (net[m] ?? 0) - share;
-    }
-    final transactions = <Map<String, dynamic>>[];
-    final debtors = net.entries.where((e) => e.value < -0.01).map((e) => {'name': e.key, 'amt': -e.value}).toList();
-    final creditors = net.entries.where((e) => e.value > 0.01).map((e) => {'name': e.key, 'amt': e.value}).toList();
-    int i = 0, j = 0;
-    while (i < debtors.length && j < creditors.length) {
-      final pay = (debtors[i]['amt'] as double) < (creditors[j]['amt'] as double)
-          ? debtors[i]['amt'] as double : creditors[j]['amt'] as double;
-      if (pay > 0.01) transactions.add({'from': debtors[i]['name'], 'to': creditors[j]['name'], 'amount': pay});
-      debtors[i]['amt'] = (debtors[i]['amt'] as double) - pay;
-      creditors[j]['amt'] = (creditors[j]['amt'] as double) - pay;
-      if ((debtors[i]['amt'] as double) < 0.01) i++;
-      if ((creditors[j]['amt'] as double) < 0.01) j++;
-    }
-    return transactions;
-  }
+class _FriendDetailScreenState extends State<FriendDetailScreen> {
 
-  double _getNet(AppProvider provider) {
-    double net = 0;
-    for (final g in provider.groups) {
-      if (!g.members.contains(friendName)) continue;
-      final balances = _calcGroupBalances(g);
-      for (final t in balances) {
-        if (t['from'] == friendName && t['to'] == 'You') net += t['amount'] as double;
-        if (t['from'] == 'You' && t['to'] == friendName) net -= t['amount'] as double;
-      }
-    }
-    for (final p in provider.directPayments.where((p) => p.friend == friendName)) {
-      if (p.youPaid) net += p.amount;
-      else net -= p.amount;
-    }
-    return net;
-  }
+  Future<List<Map<String, dynamic>>> _fetchHistory(List<QueryDocumentSnapshot> directDocs) async {
+    List<Map<String, dynamic>> history = [];
+    final groupQuery = await FirebaseFirestore.instance.collection('groups').where('members', arrayContains: 'You').get();
+    
+    for (var gDoc in groupQuery.docs) {
+      final gData = gDoc.data();
+      final members = List<String>.from(gData['members'] ?? []);
+      if (!members.contains(widget.friend.name)) continue;
 
-  List<Map<String, dynamic>> _getHistory(AppProvider provider) {
-    final history = <Map<String, dynamic>>[];
+      final groupName = gData['name'] ?? 'Unnamed';
+      final expQuery = await FirebaseFirestore.instance.collection('groups').doc(gDoc.id).collection('expenses').get();
+      
+      for (var expDoc in expQuery.docs) {
+        final exp = expDoc.data();
+        if (exp['deleted'] == true) continue;
+        
+        final amount = (exp['amount'] as num).toDouble();
+        final splitAmong = List<String>.from(exp['splitAmong'] ?? []);
+        final paidBy = exp['paidBy'] as String;
+        final isGhost = exp['isGhost'] == true;
+        final ghostText = exp['ghostText']?.toString();
+        final date = _parseDate(exp['date']); 
 
-    for (final g in provider.groups) {
-      if (!g.members.contains(friendName)) continue;
-      for (final exp in g.expenses) {
-        if (exp.deleted) continue;
-        if (exp.isGhost) {
-          if (exp.ghostText != null) {
-            history.add({
-              'label': exp.ghostText!,
-              'amount': exp.amount,
-              'youPaid': exp.paidBy == 'You',
-              'sub': g.name,
-              'date': exp.date,
-              'icon': exp.category == '✅' ? '✅' : '🔄',
-              'isGhost': true,
-            });
-          }
+        if (isGhost && ghostText != null && (ghostText.contains('You') || ghostText.contains(widget.friend.name))) {
+          history.add({'date': date, 'icon': '🤝', 'title': ghostText, 'subtitle': groupName, 'amount': amount, 'isPositive': paidBy == 'You'});
           continue;
         }
-        final splitAmong = exp.splitAmong;
-        if (exp.paidBy == friendName && splitAmong.contains('You')) {
-          history.add({
-            'label': '$friendName paid for "${exp.name}"',
-            'amount': exp.amount / splitAmong.length,
-            'youPaid': false,
-            'sub': g.name,
-            'date': exp.date,
-            'icon': '🧾',
-            'isGhost': false,
-          });
-        }
-        if (exp.paidBy == 'You' && splitAmong.contains(friendName)) {
-          history.add({
-            'label': 'You paid for "${exp.name}"',
-            'amount': exp.amount / splitAmong.length,
-            'youPaid': true,
-            'sub': g.name,
-            'date': exp.date,
-            'icon': '💸',
-            'isGhost': false,
-          });
+
+        if (paidBy == widget.friend.name && splitAmong.contains('You')) {
+          history.add({'date': date, 'icon': '🧾', 'title': '${widget.friend.name} paid for "${exp['name']}"', 'subtitle': groupName, 'amount': amount / splitAmong.length, 'isPositive': false});
+        } else if (paidBy == 'You' && splitAmong.contains(widget.friend.name)) {
+          history.add({'date': date, 'icon': '💸', 'title': 'You paid for "${exp['name']}"', 'subtitle': groupName, 'amount': amount / splitAmong.length, 'isPositive': true});
         }
       }
     }
 
-    for (final p in provider.directPayments.where((p) => p.friend == friendName)) {
-      history.add({
-        'label': p.youPaid ? 'You paid $friendName' : '$friendName paid you',
-        'amount': p.amount,
-        'youPaid': p.youPaid,
-        'sub': p.note.isNotEmpty ? p.note : 'Direct payment',
-        'date': p.date,
-        'icon': '💳',
-        'isGhost': false,
-      });
+    for (var doc in directDocs) {
+      final d = doc.data() as Map<String, dynamic>;
+      if (d['friendName'] == widget.friend.name) {
+        bool youPaid = d['youPaid'] == true;
+        history.add({'date': _parseDate(d['date']), 'icon': youPaid ? '💸' : '🤲', 'title': youPaid ? 'You paid ${widget.friend.name}' : '${widget.friend.name} paid you', 'subtitle': (d['note'] == null || d['note'].toString().isEmpty) ? 'Direct Payment' : d['note'], 'amount': (d['amount'] as num).toDouble(), 'isPositive': youPaid});
+      }
     }
 
     history.sort((a, b) => (b['date'] as DateTime).compareTo(a['date'] as DateTime));
     return history;
   }
 
+  void _shareWhatsApp(String currency, BuildContext context) async {
+    String msg = '';
+    if (widget.friend.netBalance > 0.01) msg = 'Hey ${widget.friend.name}! Just a quick reminder about our SplitSathi balance. You owe me *$currency${widget.friend.netBalance.round()}*. 🤝';
+    else if (widget.friend.netBalance < -0.01) msg = 'Hey ${widget.friend.name}! Just checking in on our SplitSathi balance. I owe you *$currency${widget.friend.netBalance.abs().round()}*, will send it over soon! 🤝';
+    else msg = 'Hey ${widget.friend.name}! Looks like we are all settled up on SplitSathi! 🤝';
+
+    final url = Uri.parse('https://wa.me/?text=${Uri.encodeComponent(msg)}');
+    if (await canLaunchUrl(url)) await launchUrl(url, mode: LaunchMode.externalApplication);
+    else if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open WhatsApp.')));
+  }
+
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AppProvider>();
-    final isDark = provider.isDark;
+    final isDark = context.watch<AppProvider>().isDark;
+    final currency = context.watch<AppProvider>().currency;
     final bg = isDark ? AppColors.darkBg : AppColors.cream;
     final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+    final surface = isDark ? AppColors.darkSurface : Colors.white;
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final net = _getNet(provider);
-    final history = _getHistory(provider);
-    final idx = friendName.codeUnitAt(0) % AppConstants.avatarColors.length;
+    final myUid = AuthService().currentUser?.uid ?? '';
 
-    final netColor = net > 0 ? AppColors.success : net < 0 ? AppColors.error : AppColors.muted;
-    final netLabel = net > 0
-        ? '$friendName owes you'
-        : net < 0
-            ? 'You owe $friendName'
-            : 'All settled up!';
-    final netBg = net > 0
-        ? AppColors.success.withOpacity(0.08)
-        : net < 0
-            ? AppColors.error.withOpacity(0.08)
-            : (isDark ? AppColors.darkSurface : Colors.white);
+    // Matches the delicate card styling in your HTML
+    Color cardBg = surface; Color cardBorder = borderColor; Color cardText = isDark ? AppColors.darkMuted : AppColors.muted;
+    String cardTitle = 'All settled up!'; String cardAmount = '$currency 0';
+
+    if (widget.friend.netBalance > 0.01) { 
+      cardBg = AppColors.success.withOpacity(0.06); // Lighter background
+      cardBorder = AppColors.success.withOpacity(0.2); // Thinner border visual
+      cardText = AppColors.success; 
+      cardTitle = '${widget.friend.name} owes you'; 
+      cardAmount = '$currency${widget.friend.netBalance.round()}'; 
+    } 
+    else if (widget.friend.netBalance < -0.01) { 
+      cardBg = AppColors.error.withOpacity(0.06); 
+      cardBorder = AppColors.error.withOpacity(0.2); 
+      cardText = AppColors.error; 
+      cardTitle = 'You owe ${widget.friend.name}'; 
+      cardAmount = '$currency${widget.friend.netBalance.abs().round()}'; 
+    }
 
     return Scaffold(
       backgroundColor: bg,
+      appBar: AppBar(
+        backgroundColor: bg, foregroundColor: AppColors.orange, elevation: 0, leadingWidth: 100,
+        leading: GestureDetector(onTap: () => Navigator.pop(context), child: const Row(children: [SizedBox(width: 16), Icon(Icons.arrow_back, size: 18), SizedBox(width: 4), Text('Back', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 15))])),
+        actions: [
+          IconButton(icon: const FaIcon(FontAwesomeIcons.whatsapp, color: Color(0xFF25D366), size: 26), onPressed: () => _shareWhatsApp(currency, context)),
+          const SizedBox(width: 8),
+        ],
+      ),
       body: SafeArea(
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.arrow_back, color: AppColors.orange, size: 18),
-                        const SizedBox(width: 4),
-                        Text('Back', style: TextStyle(
-                          color: AppColors.orange, fontFamily: 'Nunito',
-                          fontWeight: FontWeight.w700, fontSize: 14,
-                        )),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Friend header
                   Row(
                     children: [
-                      Container(
-                        width: 60, height: 60,
-                        decoration: BoxDecoration(
-                          color: AppConstants.getAvatarColor(idx),
-                          borderRadius: BorderRadius.circular(18),
-                        ),
-                        child: Center(child: Text(
-                          friendName[0].toUpperCase(),
-                          style: const TextStyle(
-                            fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                            color: Colors.white, fontSize: 26,
-                          ),
-                        )),
-                      ),
-                      const SizedBox(width: 14),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(friendName, style: TextStyle(
-                            fontFamily: 'Nunito', fontSize: 24,
-                            fontWeight: FontWeight.w900, color: textColor,
-                          )),
-                        ],
-                      ),
+                      Container(width: 64, height: 64, decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(20)), child: Center(child: Text(widget.friend.name[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontSize: 26, fontWeight: FontWeight.w900, color: Colors.white)))),
+                      const SizedBox(width: 16),
+                      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(widget.friend.name, style: TextStyle(fontFamily: 'Nunito', fontSize: 28, fontWeight: FontWeight.w900, color: textColor)), Text(widget.friend.sharedGroups.isNotEmpty ? 'In: ${widget.friend.sharedGroups.join(', ')}' : 'Direct contact', style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkMuted : AppColors.muted))])),
                     ],
                   ),
-                  const SizedBox(height: 16),
-
-                  // Net balance card
+                  const SizedBox(height: 24),
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
-                    decoration: BoxDecoration(
-                      color: netBg,
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: netColor.withOpacity(0.2)),
-                    ),
-                    child: Column(
-                      children: [
-                        Text(netLabel, style: TextStyle(
-                          fontSize: 13, color: netColor,
-                          fontWeight: FontWeight.w700,
-                        )),
-                        const SizedBox(height: 8),
-                        Text(
-                          net == 0 ? '₹0' : '₹${net.abs().round()}',
-                          style: TextStyle(
-                            fontFamily: 'Nunito', fontSize: 40,
-                            fontWeight: FontWeight.w900, color: netColor,
-                          ),
-                        ),
-                      ],
-                    ),
+                    width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 24),
+                    decoration: BoxDecoration(color: cardBg, borderRadius: BorderRadius.circular(20), border: Border.all(color: cardBorder, width: 1.5)),
+                    child: Column(children: [Text(cardTitle, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cardText)), const SizedBox(height: 8), Text(cardAmount, style: TextStyle(fontFamily: 'Nunito', fontSize: 44, fontWeight: FontWeight.w900, color: cardText, height: 1))]),
                   ),
-                  const SizedBox(height: 16),
-
-                  // Record Payment button
+                  const SizedBox(height: 24),
                   GestureDetector(
-                    onTap: () => _showRecordPayment(context, isDark),
-                    child: Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      decoration: BoxDecoration(
-                        color: AppColors.orange,
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      child: const Center(child: Text('+ Record Payment', style: TextStyle(
-                        fontFamily: 'Nunito', fontSize: 15,
-                        fontWeight: FontWeight.w800, color: Colors.white,
-                      ))),
-                    ),
+                    onTap: () { showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _DirectPaymentSheet(friendName: widget.friend.name)).then((_) => setState((){})); },
+                    child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)), child: const Center(child: Text('+ Record Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)))),
                   ),
-                  const SizedBox(height: 16),
-
-                  const Text('PAYMENT HISTORY', style: TextStyle(
-                    fontFamily: 'Nunito', fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.orange, letterSpacing: 0.5,
-                  )),
+                  const SizedBox(height: 32),
+                  Text('PAYMENT HISTORY', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 1.5)),
+                  const SizedBox(height: 12),
                 ],
               ),
             ),
-
-            // History list
             Expanded(
-              child: history.isEmpty
-                  ? Center(child: Text('No payment history yet',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: isDark ? AppColors.darkMuted : AppColors.muted,
-                      )))
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
-                      itemCount: history.length,
-                      itemBuilder: (context, i) {
-                        final h = history[i];
-                        final date = DateFormat('d MMM yyyy').format(h['date'] as DateTime);
-                        final amountColor = (h['youPaid'] as bool)
-                            ? AppColors.error : AppColors.success;
-                        final amountStr = (h['youPaid'] as bool)
-                            ? '-₹${(h['amount'] as double).round()}'
-                            : '+₹${(h['amount'] as double).round()}';
+              child: StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance.collection('direct_payments').where('userId', isEqualTo: myUid).snapshots(),
+                builder: (context, directSnapshot) {
+                  return FutureBuilder<List<Map<String,dynamic>>>(
+                    future: _fetchHistory(directSnapshot.data?.docs ?? []),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: AppColors.orange));
+                      final history = snapshot.data!;
+                      if (history.isEmpty) return Center(child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [const Text('💸', style: TextStyle(fontSize: 40)), const SizedBox(height: 12), Text('No history yet', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: textColor))]));
 
-                        return Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                          decoration: BoxDecoration(
-                            border: Border(bottom: BorderSide(color: borderColor)),
-                          ),
-                          child: Row(
+                      // --- THE TRUE PIXEL-PERFECT CHAT STYLE ---
+                      return ListView.builder(
+                        padding: const EdgeInsets.only(bottom: 40), 
+                        itemCount: history.length,
+                        itemBuilder: (context, index) {
+                          final item = history[index];
+                          final isPos = item['isPositive'] as bool;
+                          final dateStr = DateFormat('d MMM yyyy').format(item['date'] as DateTime);
+                          
+                          return Column(
                             children: [
-                              Text(h['icon'] as String, style: const TextStyle(fontSize: 20)),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
+                              Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
+                                child: Row(
                                   children: [
-                                    Text(h['label'] as String, style: TextStyle(
-                                      fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                                      fontSize: 13, color: textColor,
-                                    )),
-                                    Text('${h['sub']} · $date', style: TextStyle(
-                                      fontSize: 11,
-                                      color: isDark ? AppColors.darkMuted : AppColors.muted,
-                                    )),
+                                    // Notice: The container/circle background is GONE. Just the floating emoji!
+                                    SizedBox(
+                                      width: 36, 
+                                      child: Center(child: Text(item['icon'], style: const TextStyle(fontSize: 22)))
+                                    ),
+                                    const SizedBox(width: 14),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start, 
+                                        children: [
+                                          Text(item['title'], style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 15, color: textColor)), 
+                                          const SizedBox(height: 3), 
+                                          // Notice: Beautiful dark orange text exactly like your mockup
+                                          Text('${item['subtitle']} · $dateStr', style: const TextStyle(fontSize: 12, color: Color(0xFFD97706), fontWeight: FontWeight.w600))
+                                        ]
+                                      )
+                                    ),
+                                    Text('${isPos ? '+' : '-'} $currency${(item['amount'] as double).round()}', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 16, color: isPos ? AppColors.success : AppColors.error)),
                                   ],
                                 ),
                               ),
-                              Text(amountStr, style: TextStyle(
-                                fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                                fontSize: 15, color: amountColor,
-                              )),
+                              if (index < history.length - 1) Divider(height: 1, thickness: 1, color: borderColor.withOpacity(0.5), indent: 70, endIndent: 20),
                             ],
-                          ),
-                        );
-                      },
-                    ),
+                          );
+                        },
+                      );
+                    }
+                  );
+                }
+              ),
             ),
           ],
         ),
       ),
     );
   }
-
-  void _showRecordPayment(BuildContext context, bool isDark) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _RecordPaymentSheet(friendName: friendName),
-    );
-  }
 }
 
-// ── RECORD PAYMENT SHEET ───────────────────────────────────────────
-class _RecordPaymentSheet extends StatefulWidget {
+// ════════════════════════════════════════════════════════════════════════════
+// 3. EXISTING FRIEND DIRECT PAYMENT SHEET
+// ════════════════════════════════════════════════════════════════════════════
+class _DirectPaymentSheet extends StatefulWidget {
   final String friendName;
-  const _RecordPaymentSheet({required this.friendName});
-
+  const _DirectPaymentSheet({required this.friendName});
   @override
-  State<_RecordPaymentSheet> createState() => _RecordPaymentSheetState();
+  State<_DirectPaymentSheet> createState() => _DirectPaymentSheetState();
 }
 
-class _RecordPaymentSheetState extends State<_RecordPaymentSheet> {
+class _DirectPaymentSheetState extends State<_DirectPaymentSheet> {
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
   bool _youPaid = true;
-
   @override
-  void dispose() {
-    _amountController.dispose();
-    _noteController.dispose();
-    super.dispose();
+  void dispose() { _amountController.dispose(); _noteController.dispose(); super.dispose(); }
+  void _save() async {
+    final amt = double.tryParse(_amountController.text) ?? 0;
+    if (amt <= 0) return;
+    final myUid = AuthService().currentUser?.uid;
+    if (myUid == null) return;
+    await FirebaseFirestore.instance.collection('direct_payments').add({'userId': myUid, 'friendName': widget.friendName, 'youPaid': _youPaid, 'amount': amt, 'note': _noteController.text.trim(), 'date': DateTime.now().toIso8601String()});
+    if (mounted) { HapticFeedback.mediumImpact(); Navigator.pop(context); }
   }
-
-  void _save() {
-    final amount = double.tryParse(_amountController.text) ?? 0;
-    if (amount <= 0) return;
-    context.read<AppProvider>().addDirectPayment(
-      DirectPayment.create(
-        friend: widget.friendName,
-        amount: amount,
-        youPaid: _youPaid,
-        note: _noteController.text.trim(),
-      ),
-    );
-    HapticFeedback.mediumImpact();
-    Navigator.pop(context);
-  }
-
-  void _openNumpad() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _FriendNumpad(
-        initial: _amountController.text,
-        onConfirm: (val) => setState(() => _amountController.text = val),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isDark = context.watch<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-
+    final isDark = context.watch<AppProvider>().isDark; final currency = context.watch<AppProvider>().currency; final bg = isDark ? AppColors.darkSurface : Colors.white; final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C); final borderColor = isDark ? AppColors.darkBorder : AppColors.border; final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
     return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20, right: 20, top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(child: Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
-          )),
-          const SizedBox(height: 16),
-          Text('Record Payment', style: TextStyle(
-            fontFamily: 'Nunito', fontSize: 20,
-            fontWeight: FontWeight.w900, color: textColor,
-          )),
-          const SizedBox(height: 20),
-
-          // Who paid toggle
-          Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _youPaid = true),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: _youPaid ? AppColors.orange.withOpacity(0.15) : inputBg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: _youPaid ? AppColors.orange : borderColor,
-                        width: _youPaid ? 2 : 1.5,
-                      ),
-                    ),
-                    child: Center(child: Text('💸 I paid them', style: TextStyle(
-                      fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: _youPaid ? AppColors.orange : textColor,
-                    ))),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: GestureDetector(
-                  onTap: () => setState(() => _youPaid = false),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    decoration: BoxDecoration(
-                      color: !_youPaid ? AppColors.orange.withOpacity(0.15) : inputBg,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: !_youPaid ? AppColors.orange : borderColor,
-                        width: !_youPaid ? 2 : 1.5,
-                      ),
-                    ),
-                    child: Center(child: Text('🤲 They paid me', style: TextStyle(
-                      fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                      fontSize: 13,
-                      color: !_youPaid ? AppColors.orange : textColor,
-                    ))),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Amount
-          GestureDetector(
-            onTap: _openNumpad,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: inputBg, borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: borderColor),
-              ),
-              child: Row(
-                children: [
-                  const Text('₹', style: TextStyle(
-                    fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                    fontSize: 20, color: AppColors.orange,
-                  )),
-                  const SizedBox(width: 8),
-                  Text(
-                    _amountController.text.isEmpty ? 'Enter amount' : _amountController.text,
-                    style: TextStyle(
-                      fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 16,
-                      color: _amountController.text.isEmpty
-                          ? (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)
-                          : textColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-
-          // Note
-          TextField(
-            controller: _noteController,
-            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-            decoration: InputDecoration(
-              hintText: 'Note (optional)',
-              hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)),
-              filled: true, fillColor: inputBg,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
-            ),
-          ),
-          const SizedBox(height: 24),
-
-          GestureDetector(
-            onTap: _save,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-              child: const Center(child: Text('Save Payment →', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 16,
-                fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
-            ),
-          ),
-        ],
+      decoration: BoxDecoration(color: bg, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.only(left: 20, right: 20, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)))), const SizedBox(height: 16), Text('Record Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)), const SizedBox(height: 24), Text('WHO PAID?', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)), const SizedBox(height: 8),
+            Row(children: [Expanded(child: GestureDetector(onTap: () => setState(() => _youPaid = true), child: Container(padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: _youPaid ? AppColors.orange.withOpacity(0.15) : inputBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _youPaid ? AppColors.orange : borderColor, width: 1.5)), child: Center(child: Text('💸 I paid them', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: _youPaid ? AppColors.orange : (isDark ? AppColors.darkMuted : AppColors.muted))))))), const SizedBox(width: 12), Expanded(child: GestureDetector(onTap: () => setState(() => _youPaid = false), child: Container(padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: !_youPaid ? AppColors.orange.withOpacity(0.15) : inputBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: !_youPaid ? AppColors.orange : borderColor, width: 1.5)), child: Center(child: Text('🤲 They paid me', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: !_youPaid ? AppColors.orange : (isDark ? AppColors.darkMuted : AppColors.muted)))))))]),
+            const SizedBox(height: 20), Text('AMOUNT', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)), const SizedBox(height: 8),
+            TextField(controller: _amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 18), decoration: InputDecoration(prefixIcon: Padding(padding: const EdgeInsets.all(14), child: Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange))), hintText: '0', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: inputBg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))), const SizedBox(height: 20), Text('NOTE (OPTIONAL)', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)), const SizedBox(height: 8),
+            TextField(controller: _noteController, style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700), decoration: InputDecoration(hintText: 'e.g. Borrowed for lunch...', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: inputBg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))), const SizedBox(height: 24),
+            GestureDetector(onTap: _save, child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)), child: const Center(child: Text('Save Payment →', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))))),
+          ],
+        ),
       ),
     );
   }
 }
 
-// ── NEW DIRECT FRIEND SHEET ────────────────────────────────────────
-class _NewDirectFriendSheet extends StatefulWidget {
-  const _NewDirectFriendSheet();
-
+// ════════════════════════════════════════════════════════════════════════════
+// 4. NEW DIRECT FRIEND PAYMENT SHEET
+// ════════════════════════════════════════════════════════════════════════════
+class _NewDirectPaymentSheet extends StatefulWidget {
+  const _NewDirectPaymentSheet();
   @override
-  State<_NewDirectFriendSheet> createState() => _NewDirectFriendSheetState();
+  State<_NewDirectPaymentSheet> createState() => _NewDirectPaymentSheetState();
 }
 
-class _NewDirectFriendSheetState extends State<_NewDirectFriendSheet> {
+class _NewDirectPaymentSheetState extends State<_NewDirectPaymentSheet> {
   final _nameController = TextEditingController();
   final _amountController = TextEditingController();
   final _noteController = TextEditingController();
   bool _youPaid = true;
-
   @override
-  void dispose() {
-    _nameController.dispose();
-    _amountController.dispose();
-    _noteController.dispose();
-    super.dispose();
+  void dispose() { _nameController.dispose(); _amountController.dispose(); _noteController.dispose(); super.dispose(); }
+  void _save() async {
+    final name = _nameController.text.trim(); final amt = double.tryParse(_amountController.text) ?? 0;
+    if (name.isEmpty || amt <= 0) return;
+    final myUid = AuthService().currentUser?.uid; if (myUid == null) return;
+    await FirebaseFirestore.instance.collection('direct_payments').add({'userId': myUid, 'friendName': name, 'youPaid': _youPaid, 'amount': amt, 'note': _noteController.text.trim(), 'date': DateTime.now().toIso8601String()});
+    if (mounted) { HapticFeedback.mediumImpact(); Navigator.pop(context); }
   }
-
-  void _save() {
-    final name = _nameController.text.trim();
-    final amount = double.tryParse(_amountController.text) ?? 0;
-    if (name.isEmpty || amount <= 0) return;
-    context.read<AppProvider>().addDirectPayment(
-      DirectPayment.create(
-        friend: name,
-        amount: amount,
-        youPaid: _youPaid,
-        note: _noteController.text.trim(),
-      ),
-    );
-    HapticFeedback.mediumImpact();
-    Navigator.pop(context);
-  }
-
-  void _openNumpad() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _FriendNumpad(
-        initial: _amountController.text,
-        onConfirm: (val) => setState(() => _amountController.text = val),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final isDark = context.watch<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-
+    final isDark = context.watch<AppProvider>().isDark; final currency = context.watch<AppProvider>().currency; final bg = isDark ? AppColors.darkSurface : Colors.white; final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C); final borderColor = isDark ? AppColors.darkBorder : AppColors.border; final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
     return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20, right: 20, top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
+      decoration: BoxDecoration(color: bg, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.only(left: 20, right: 20, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
       child: SingleChildScrollView(
         child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min,
           children: [
-            Center(child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
-            )),
-            const SizedBox(height: 16),
-            Text('Add Friend & Record Payment', style: TextStyle(
-              fontFamily: 'Nunito', fontSize: 18,
-              fontWeight: FontWeight.w900, color: textColor,
-            )),
-            const SizedBox(height: 20),
-            TextField(
-              controller: _nameController,
-              style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-              decoration: InputDecoration(
-                labelText: "Friend's Name",
-                labelStyle: const TextStyle(color: AppColors.orange),
-                filled: true, fillColor: inputBg,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
-              ),
-            ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _youPaid = true),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: _youPaid ? AppColors.orange.withOpacity(0.15) : inputBg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _youPaid ? AppColors.orange : borderColor, width: _youPaid ? 2 : 1.5),
-                      ),
-                      child: Center(child: Text('💸 I paid them', style: TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 13,
-                        color: _youPaid ? AppColors.orange : textColor,
-                      ))),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: GestureDetector(
-                    onTap: () => setState(() => _youPaid = false),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        color: !_youPaid ? AppColors.orange.withOpacity(0.15) : inputBg,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: !_youPaid ? AppColors.orange : borderColor, width: !_youPaid ? 2 : 1.5),
-                      ),
-                      child: Center(child: Text('🤲 They paid me', style: TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 13,
-                        color: !_youPaid ? AppColors.orange : textColor,
-                      ))),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            GestureDetector(
-              onTap: _openNumpad,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                decoration: BoxDecoration(color: inputBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: borderColor)),
-                child: Row(
-                  children: [
-                    const Text('₹', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.orange)),
-                    const SizedBox(width: 8),
-                    Text(
-                      _amountController.text.isEmpty ? 'Enter amount' : _amountController.text,
-                      style: TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 16,
-                        color: _amountController.text.isEmpty
-                            ? (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)
-                            : textColor,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _noteController,
-              style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-              decoration: InputDecoration(
-                hintText: 'Note (optional)',
-                hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)),
-                filled: true, fillColor: inputBg,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
-              ),
-            ),
-            const SizedBox(height: 24),
-            GestureDetector(
-              onTap: _save,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-                child: const Center(child: Text('Save →', style: TextStyle(
-                  fontFamily: 'Nunito', fontSize: 16,
-                  fontWeight: FontWeight.w800, color: Colors.white,
-                ))),
-              ),
-            ),
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)))), const SizedBox(height: 16), Text('New Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)), const SizedBox(height: 24), Text('FRIEND\'S NAME', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)), const SizedBox(height: 8),
+            TextField(controller: _nameController, style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700), decoration: InputDecoration(hintText: 'Enter name...', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: inputBg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))), const SizedBox(height: 20), Text('WHO PAID?', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)), const SizedBox(height: 8),
+            Row(children: [Expanded(child: GestureDetector(onTap: () => setState(() => _youPaid = true), child: Container(padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: _youPaid ? AppColors.orange.withOpacity(0.15) : inputBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: _youPaid ? AppColors.orange : borderColor, width: 1.5)), child: Center(child: Text('💸 I paid them', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: _youPaid ? AppColors.orange : (isDark ? AppColors.darkMuted : AppColors.muted))))))), const SizedBox(width: 12), Expanded(child: GestureDetector(onTap: () => setState(() => _youPaid = false), child: Container(padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: !_youPaid ? AppColors.orange.withOpacity(0.15) : inputBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: !_youPaid ? AppColors.orange : borderColor, width: 1.5)), child: Center(child: Text('🤲 They paid me', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: !_youPaid ? AppColors.orange : (isDark ? AppColors.darkMuted : AppColors.muted)))))))]),
+            const SizedBox(height: 20), Text('AMOUNT', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)), const SizedBox(height: 8),
+            TextField(controller: _amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 18), decoration: InputDecoration(prefixIcon: Padding(padding: const EdgeInsets.all(14), child: Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange))), hintText: '0', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: inputBg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))), const SizedBox(height: 20), Text('NOTE (OPTIONAL)', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)), const SizedBox(height: 8),
+            TextField(controller: _noteController, style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700), decoration: InputDecoration(hintText: 'e.g. Borrowed for lunch...', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: inputBg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))), const SizedBox(height: 24),
+            GestureDetector(onTap: _save, child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)), child: const Center(child: Text('Save Payment →', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))))),
           ],
         ),
       ),
     );
   }
-}
-
-// ── FRIEND NUMPAD ──────────────────────────────────────────────────
-class _FriendNumpad extends StatefulWidget {
-  final String initial;
-  final Function(String) onConfirm;
-  const _FriendNumpad({required this.initial, required this.onConfirm});
-
-  @override
-  State<_FriendNumpad> createState() => _FriendNumpadState();
-}
-
-class _FriendNumpadState extends State<_FriendNumpad> {
-  late String _value;
-
-  @override
-  void initState() {
-    super.initState();
-    _value = widget.initial.isEmpty ? '0' : widget.initial;
-  }
-
-  void _press(String key) {
-    setState(() {
-      if (key == '.' && _value.contains('.')) return;
-      if (_value == '0' && key != '.') _value = key;
-      else _value += key;
-    });
-  }
-
-  void _delete() {
-    setState(() {
-      _value = _value.length > 1 ? _value.substring(0, _value.length - 1) : '0';
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.read<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final keyBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: const Border(top: BorderSide(color: AppColors.orange, width: 2)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('₹', style: TextStyle(fontFamily: 'Nunito', fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.orange)),
-              const SizedBox(width: 4),
-              Text(_value, style: TextStyle(fontFamily: 'Nunito', fontSize: 48, fontWeight: FontWeight.w900, color: textColor)),
-            ],
-          ),
-          const SizedBox(height: 16),
-          GridView.count(
-            shrinkWrap: true,
-            crossAxisCount: 3,
-            mainAxisSpacing: 10, crossAxisSpacing: 10,
-            childAspectRatio: 2,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              ...['1','2','3','4','5','6','7','8','9','.','0'].map((k) =>
-                _key(k, keyBg, borderColor, textColor, () => _press(k))
-              ),
-              _key('⌫', keyBg, borderColor, AppColors.error, _delete),
-            ],
-          ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              widget.onConfirm(_value == '0' ? '' : _value);
-              Navigator.pop(context);
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-              child: const Center(child: Text('Done ✓', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _key(String label, Color bg, Color border, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); onTap(); },
-      child: Container(
-        decoration: BoxDecoration(
-          color: bg, borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: border, width: 1.5),
-        ),
-        child: Center(child: Text(label, style: TextStyle(
-          fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w800, color: color,
-        ))),
-      ),
-    );
-  }
-}
-
-class _FriendSummary {
-  final String name;
-  final List<String> groupNames;
-  double net;
-  DateTime? lastActivity;
-  _FriendSummary({required this.name, required this.groupNames, required this.net, required this.lastActivity});
 }

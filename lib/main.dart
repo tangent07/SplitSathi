@@ -1,3 +1,4 @@
+import 'services/notification_service.dart'; // <-- Add this import
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; 
 import 'package:firebase_core/firebase_core.dart';
@@ -5,7 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-
 import 'screens/login_screen.dart';
 import 'screens/profile_setup_screen.dart'; 
 import 'services/auth_service.dart';
@@ -65,6 +65,7 @@ class SplitSathiApp extends StatelessWidget {
               if (userSnapshot.hasData && userSnapshot.data!.exists) {
                 final userData = userSnapshot.data!.data() as Map<String, dynamic>?;
                 if (userData != null && userData['profileComplete'] == true) {
+                  NotificationService().init();
                   // They are fully set up! Let them into the app.
                   return const HomeScreen();
                 }

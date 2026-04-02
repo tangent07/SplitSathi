@@ -1,3 +1,5 @@
+import 'dart:async';
+import '../services/auth_service.dart';
 import '../services/db_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../widgets/app_drawer.dart';
@@ -53,199 +55,120 @@ class HomeScreen extends StatelessWidget {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           HapticFeedback.mediumImpact();
-          Navigator.push(context, MaterialPageRoute(
-            builder: (_) => const FriendsScreen(),
-          ));
+          
+          // This custom dialog makes the panel float in the bottom right!
+          showGeneralDialog(
+            context: context,
+            barrierDismissible: true,
+            barrierLabel: 'Dismiss',
+            barrierColor: Colors.black.withOpacity(0.15),
+            transitionDuration: const Duration(milliseconds: 250),
+            pageBuilder: (context, _, __) => Align(
+              alignment: Alignment.bottomRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16, bottom: 90, top: 60),
+                child: Material(
+                  color: Colors.transparent,
+                  child: const FriendsPanel(), // Calls our new floating panel!
+                ),
+              ),
+            ),
+            transitionBuilder: (context, anim1, anim2, child) {
+              return SlideTransition(
+                position: Tween<Offset>(begin: const Offset(0, 0.1), end: Offset.zero)
+                    .animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+                child: FadeTransition(opacity: anim1, child: child),
+              );
+            },
+          );
         },
         backgroundColor: AppColors.orange,
         child: const Text('👥', style: TextStyle(fontSize: 22)),
       ),
     );
   }
+  
+  // --- NEW: THE GLOBAL MATH ENGINE ---
+  Future<Map<String, double>> _calculateGlobalTotals(List<Group> shallowGroups, String myUid, List<QueryDocumentSnapshot> directDocs) async {
+    Map<String, double> globalBalances = {};
+
+    // 1. Fetch actual expenses for all your groups
+    for (final g in shallowGroups) {
+      if (!g.members.contains('You')) continue;
+      
+      final expQuery = await FirebaseFirestore.instance.collection('groups').doc(g.id).collection('expenses').get();
+      final net = <String, double>{};
+      for (final m in g.members) net[m] = 0;
+
+      for (var doc in expQuery.docs) {
+        final exp = doc.data();
+        if (exp['deleted'] == true || exp['isGhost'] == true) continue;
+        
+        final amount = (exp['amount'] as num).toDouble();
+        final splitAmong = List<String>.from(exp['splitAmong'] ?? []);
+        final paidBy = exp['paidBy'] as String;
+        final share = amount / splitAmong.length;
+
+        net[paidBy] = (net[paidBy] ?? 0) + amount;
+        for (final m in splitAmong) net[m] = (net[m] ?? 0) - share;
+      }
+
+      // Resolve debts for this group
+      final debtors = net.entries.where((e) => e.value < -0.01).map((e) => {'name': e.key, 'amt': -e.value}).toList();
+      final creditors = net.entries.where((e) => e.value > 0.01).map((e) => {'name': e.key, 'amt': e.value}).toList();
+      int i = 0, j = 0;
+      while (i < debtors.length && j < creditors.length) {
+        final pay = (debtors[i]['amt'] as double) < (creditors[j]['amt'] as double) ? debtors[i]['amt'] as double : creditors[j]['amt'] as double;
+        if (pay > 0.01) {
+          final from = debtors[i]['name'] as String;
+          final to = creditors[j]['name'] as String;
+          if (from == 'You') globalBalances[to] = (globalBalances[to] ?? 0) - pay;
+          else if (to == 'You') globalBalances[from] = (globalBalances[from] ?? 0) + pay;
+        }
+        debtors[i]['amt'] = (debtors[i]['amt'] as double) - pay;
+        creditors[j]['amt'] = (creditors[j]['amt'] as double) - pay;
+        if ((debtors[i]['amt'] as double) < 0.01) i++;
+        if ((creditors[j]['amt'] as double) < 0.01) j++;
+      }
+    }
+
+    // 2. Add Direct Payments
+    for (var doc in directDocs) {
+      final data = doc.data() as Map<String, dynamic>;
+      final friendName = data['friendName'] as String;
+      final amt = (data['amount'] as num).toDouble();
+      final youPaid = data['youPaid'] == true;
+      
+      if (youPaid) globalBalances[friendName] = (globalBalances[friendName] ?? 0) + amt;
+      else globalBalances[friendName] = (globalBalances[friendName] ?? 0) - amt;
+    }
+
+    // 3. Calculate Final Home Screen Totals
+    double totalOwe = 0;
+    double totalReceive = 0;
+    for (var bal in globalBalances.values) {
+      if (bal > 0.01) totalReceive += bal;
+      else if (bal < -0.01) totalOwe += bal.abs();
+    }
+    
+    return {
+      'owe': totalOwe,
+      'receive': totalReceive,
+      'net': totalReceive - totalOwe,
+    };
+  }
 
   // ── SECTION 1: HEADER ──────────────────────────────────────────
   Widget _buildHeader(BuildContext context, AppProvider provider, bool isDark) {
-    // <-- NEW: Grab the live currency from the provider! -->
-    final currency = provider.currency;
-
-    // Calculate balances
-    double totalOwe = 0;
-    double totalReceive = 0;
-
-    for (final g in provider.groups) {
-      final balances = _calcBalances(g);
-      for (final t in balances) {
-        if (t['from'] == 'You') totalOwe += t['amount'] as double;
-        if (t['to'] == 'You') totalReceive += t['amount'] as double;
-      }
-    }
-    final net = totalReceive - totalOwe;
-
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
-      decoration: const BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFFF97316), Color(0xFFEA580C)],
-        ),
-      ),
-      child: Stack(
-        children: [
-          // Dynamic Currency Watermark
-          Positioned(
-            right: -10,
-            top: -20,
-            child: Text(
-              currency, // <-- DYNAMIC CURRENCY
-              style: TextStyle(
-                fontSize: 130,
-                color: Colors.white.withOpacity(0.07),
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Navigation Menu + Logo + Dark mode toggle
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Builder(
-                        builder: (BuildContext innerContext) {
-                          return GestureDetector(
-                            onTap: () {
-                              Scaffold.of(innerContext).openDrawer();
-                            },
-                            child: const Padding(
-                              padding: EdgeInsets.only(right: 12.0),
-                              child: Icon(
-                                Icons.menu,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-
-                      RichText(
-                        text: const TextSpan(
-                          children: [
-                            TextSpan(
-                              text: 'Split',
-                              style: TextStyle(
-                                fontFamily: 'Nunito',
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
-                                color: Colors.white,
-                              ),
-                            ),
-                            TextSpan(
-                              text: 'Sathi',
-                              style: TextStyle(
-                                fontFamily: 'Nunito',
-                                fontSize: 28,
-                                fontWeight: FontWeight.w900,
-                                color: Color(0xFFFCD34D),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Dark mode toggle
-                  GestureDetector(
-                    onTap: () {
-                      HapticFeedback.lightImpact();
-                      provider.toggleDarkMode();
-                    },
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Center(
-                        child: Text(
-                          isDark ? '☀️' : '🌙',
-                          style: const TextStyle(fontSize: 18),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-
-              const Padding(
-                padding: EdgeInsets.only(left: 40.0, top: 4),
-                child: Text(
-                  'Split bills. Not friendships. 🤝',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white60,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 14),
-
-              // Balance card
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    // <-- DYNAMIC CURRENCY injected into the strings! -->
-                    _balanceItem('YOU OWE', '$currency${totalOwe.round()}', const Color(0xFFFECACA)),
-                    _balanceItem('YOU GET', '$currency${totalReceive.round()}', const Color(0xFFBBF7D0)),
-                    _balanceItem(
-                      'NET',
-                      '${net >= 0 ? '+' : ''}$currency${net.round()}',
-                      Colors.white,
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+    return const LiveGlobalHeader();
   }
 
   Widget _balanceItem(String label, String value, Color color) {
     return Column(
       children: [
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 9,
-            color: Colors.white.withOpacity(0.55),
-            letterSpacing: 1,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
+        Text(label, style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.55), letterSpacing: 1, fontWeight: FontWeight.w700)),
         const SizedBox(height: 3),
-        Text(
-          value,
-          style: TextStyle(
-            fontFamily: 'Nunito',
-            fontSize: 16,
-            fontWeight: FontWeight.w900,
-            color: color,
-          ),
-        ),
+        Text(value, style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w900, color: color)),
       ],
     );
   }
@@ -995,3 +918,140 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
     fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5,
   ));
 }
+
+class LiveGlobalHeader extends StatefulWidget {
+  const LiveGlobalHeader({super.key});
+  @override
+  State<LiveGlobalHeader> createState() => _LiveGlobalHeaderState();
+}
+
+class _LiveGlobalHeaderState extends State<LiveGlobalHeader> {
+  Map<String, double> _totals = {'owe': 0.0, 'receive': 0.0, 'net': 0.0};
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchTotals();
+    // This polls Firestore every 2 seconds. When you press "Back" from a group, 
+    // it guarantees the Home Screen updates instantly without needing a full screen reload!
+    _timer = Timer.periodic(const Duration(seconds: 2), (_) => _fetchTotals());
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  Future<void> _fetchTotals() async {
+    final myUid = AuthService().currentUser?.uid;
+    if (myUid == null) return;
+    Map<String, double> globalBalances = {};
+
+    try {
+      // Fetch Groups Independently
+      final groupQuery = await FirebaseFirestore.instance.collection('groups').where('members', arrayContains: 'You').get();
+      for (var gDoc in groupQuery.docs) {
+        final members = List<String>.from(gDoc.data()['members'] ?? []);
+        final expQuery = await FirebaseFirestore.instance.collection('groups').doc(gDoc.id).collection('expenses').get();
+        final net = <String, double>{};
+        for (final m in members) net[m] = 0;
+
+        for (var doc in expQuery.docs) {
+          final exp = doc.data();
+          if (exp['deleted'] == true || exp['isGhost'] == true) continue;
+          final amount = (exp['amount'] as num).toDouble();
+          final splitAmong = List<String>.from(exp['splitAmong'] ?? []);
+          final paidBy = exp['paidBy'] as String;
+          final share = amount / splitAmong.length;
+          net[paidBy] = (net[paidBy] ?? 0) + amount;
+          for (final m in splitAmong) net[m] = (net[m] ?? 0) - share;
+        }
+
+        final debtors = net.entries.where((e) => e.value < -0.01).map((e) => {'name': e.key, 'amt': -e.value}).toList();
+        final creditors = net.entries.where((e) => e.value > 0.01).map((e) => {'name': e.key, 'amt': e.value}).toList();
+        int i = 0, j = 0;
+        while (i < debtors.length && j < creditors.length) {
+          final pay = (debtors[i]['amt'] as double) < (creditors[j]['amt'] as double) ? debtors[i]['amt'] as double : creditors[j]['amt'] as double;
+          if (pay > 0.01) {
+            final from = debtors[i]['name'] as String;
+            final to = creditors[j]['name'] as String;
+            if (from == 'You') globalBalances[to] = (globalBalances[to] ?? 0) - pay;
+            else if (to == 'You') globalBalances[from] = (globalBalances[from] ?? 0) + pay;
+          }
+          debtors[i]['amt'] = (debtors[i]['amt'] as double) - pay;
+          creditors[j]['amt'] = (creditors[j]['amt'] as double) - pay;
+          if ((debtors[i]['amt'] as double) < 0.01) i++;
+          if ((creditors[j]['amt'] as double) < 0.01) j++;
+        }
+      }
+
+      // Fetch Direct Payments Independently
+      final directQuery = await FirebaseFirestore.instance.collection('direct_payments').where('userId', isEqualTo: myUid).get();
+      for (var doc in directQuery.docs) {
+        final data = doc.data();
+        final friendName = data['friendName'] as String;
+        final amt = (data['amount'] as num).toDouble();
+        if (data['youPaid'] == true) globalBalances[friendName] = (globalBalances[friendName] ?? 0) + amt;
+        else globalBalances[friendName] = (globalBalances[friendName] ?? 0) - amt;
+      }
+
+      double totalOwe = 0; double totalReceive = 0;
+      for (var bal in globalBalances.values) {
+        if (bal > 0.01) totalReceive += bal;
+        else if (bal < -0.01) totalOwe += bal.abs();
+      }
+
+      if (mounted) setState(() => _totals = {'owe': totalOwe, 'receive': totalReceive, 'net': totalReceive - totalOwe});
+    } catch (e) { debugPrint('Error fetching totals: $e'); }
+  }
+
+  Widget _balanceItem(String label, String value, Color color) {
+    return Column(children: [Text(label, style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.55), letterSpacing: 1, fontWeight: FontWeight.w700)), const SizedBox(height: 3), Text(value, style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w900, color: color))]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<AppProvider>();
+    final currency = provider.currency; final isDark = provider.isDark;
+    final totalOwe = _totals['owe']!; final totalReceive = _totals['receive']!; final net = _totals['net']!;
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
+      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF97316), Color(0xFFEA580C)])),
+      child: Stack(
+        children: [
+          Positioned(right: -10, top: -20, child: Text(currency, style: TextStyle(fontSize: 130, color: Colors.white.withOpacity(0.07), fontWeight: FontWeight.w900))),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(children: [Builder(builder: (innerContext) => GestureDetector(onTap: () => Scaffold.of(innerContext).openDrawer(), child: const Padding(padding: EdgeInsets.only(right: 12.0), child: Icon(Icons.menu, color: Colors.white, size: 28)))), RichText(text: const TextSpan(children: [TextSpan(text: 'Split', style: TextStyle(fontFamily: 'Nunito', fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white)), TextSpan(text: 'Sathi', style: TextStyle(fontFamily: 'Nunito', fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFFFCD34D)))]))]),
+                  GestureDetector(onTap: () { HapticFeedback.lightImpact(); provider.toggleDarkMode(); }, child: Container(width: 36, height: 36, decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Center(child: Text(isDark ? '☀️' : '🌙', style: const TextStyle(fontSize: 18))))),
+                ],
+              ),
+              const Padding(padding: EdgeInsets.only(left: 40.0, top: 4), child: Text('Split bills. Not friendships. 🤝', style: TextStyle(fontSize: 12, color: Colors.white60))),
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _balanceItem('YOU OWE', '$currency${totalOwe.round()}', const Color(0xFFFECACA)),
+                    _balanceItem('YOU GET', '$currency${totalReceive.round()}', const Color(0xFFBBF7D0)),
+                    _balanceItem('NET', '${net >= 0 ? '+' : ''}$currency${net.round()}', Colors.white),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
