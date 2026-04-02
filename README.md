@@ -1,17 +1,91 @@
-# splitsathi
+<div align="center">
+  <h1>🤝 SplitSathi</h1>
+  <p><i>Split bills. Not friendships. A beautiful, real-time expense-sharing app.</i></p>
+  
+  <img src="https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white" alt="Flutter" />
+  <img src="https://img.shields.io/badge/Firebase-%23FFCA28.svg?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
+  <img src="https://img.shields.io/badge/Dart-%230175C2.svg?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
+</div>
 
-A new Flutter project.
+<br>
 
-## Getting Started
+## 📱 About The Project
 
-This project is a starting point for a Flutter application.
+SplitSathi is a full-stack, cross-platform mobile application designed to take the awkwardness out of sharing expenses with friends, roommates, or travel buddies. Built with a focus on UI/UX, the app features a pixel-perfect, animated interface and uses Firebase Firestore to calculate complex group debts in real-time.
 
-A few resources to get you started if this is your first Flutter project:
+### ✨ Key Features
+* **Real-time Global Balances:** An autonomous background engine continuously polls Firebase to calculate optimized net balances across all groups and direct interactions.
+* **Smart Settlement Algorithm:** Automatically simplifies debts within groups (e.g., if A owes B, and B owes C, A just owes C).
+* **Deep-Linked Nudges:** Integrated with the WhatsApp API to dynamically generate context-aware reminder messages based on live database math.
+* **Sleek UI/UX:** Features a custom bottom-sheet architecture, floating interactive panels, and edge-to-edge chat-style transaction histories.
+* **Full Theme Support:** Gorgeous, animated transitions between Light and Dark mode.
 
-- [Learn Flutter](https://docs.flutter.dev/get-started/learn-flutter)
-- [Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Flutter learning resources](https://docs.flutter.dev/reference/learning-resources)
+---
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+## 📸 Screenshots
+
+| Dashboard & Global Balances | Smart Group Expenses | Direct Friends Panel |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/home.png" width="250"> | <img src="assets/screenshots/group.png" width="250"> | <img src="assets/screenshots/friends.png" width="250"> |
+
+*(Note: Replace the image paths above with your actual uploaded screenshot names!)*
+
+---
+
+## 🛠️ Built With
+
+* **Framework:** [Flutter](https://flutter.dev/)
+* **Backend as a Service:** [Firebase Firestore](https://firebase.google.com/products/firestore) (NoSQL Database)
+* **Authentication:** Firebase Auth
+* **State Management:** Provider
+* **Security:** `flutter_dotenv` for environment variable protection
+
+---
+
+<div align="center">
+  <h1>🤝 SplitSathi</h1>
+  <p><i>Split bills. Not friendships. A beautiful, real-time expense-sharing app.</i></p>
+  
+  <img src="https://img.shields.io/badge/Flutter-%2302569B.svg?style=for-the-badge&logo=Flutter&logoColor=white" alt="Flutter" />
+  <img src="https://img.shields.io/badge/Firebase-%23FFCA28.svg?style=for-the-badge&logo=firebase&logoColor=black" alt="Firebase" />
+  <img src="https://img.shields.io/badge/Dart-%230175C2.svg?style=for-the-badge&logo=dart&logoColor=white" alt="Dart" />
+</div>
+
+<br>
+
+## 📱 About The Project
+
+SplitSathi is a full-stack, cross-platform mobile application designed to take the awkwardness out of sharing expenses with friends, roommates, or travel buddies. Built with a focus on UI/UX, the app features a pixel-perfect, animated interface and uses Firebase Firestore to calculate complex group debts in real-time.
+
+### ✨ Key Features
+* **Real-time Global Balances:** An autonomous background engine continuously polls Firebase to calculate optimized net balances across all groups and direct interactions.
+* **Smart Settlement Algorithm:** Automatically simplifies debts within groups (e.g., if A owes B, and B owes C, A just owes C).
+* **Deep-Linked Nudges:** Integrated with the WhatsApp API to dynamically generate context-aware reminder messages based on live database math.
+* **Sleek UI/UX:** Features a custom bottom-sheet architecture, floating interactive panels, and edge-to-edge chat-style transaction histories.
+* **Full Theme Support:** Gorgeous, animated transitions between Light and Dark mode.
+
+---
+
+## 📸 Screenshots
+
+| Dashboard & Global Balances | Smart Group Expenses | Direct Friends Panel |
+|:---:|:---:|:---:|
+| <img src="assets/screenshots/home.png" width="250"> | <img src="assets/screenshots/group.png" width="250"> | <img src="assets/screenshots/friends.png" width="250"> |
+
+*(Note: Replace the image paths above with your actual uploaded screenshot names!)*
+
+---
+
+## 🛠️ Built With
+
+* **Framework:** [Flutter](https://flutter.dev/)
+* **Backend as a Service:** [Firebase Firestore](https://firebase.google.com/products/firestore) (NoSQL Database)
+* **Authentication:** Firebase Auth
+* **State Management:** Provider
+* **Security:** `flutter_dotenv` for environment variable protection
+
+---
+
+## 🚀 Getting Started
+
+To get a local copy up and running, kindly ping on lyingtreasure@gmail.com
