@@ -1,3 +1,4 @@
+import 'add_friend_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -70,8 +71,10 @@ class _FriendsPanelState extends State<FriendsPanel> {
 
   Future<List<FriendData>> _fetchLiveFriends(List<QueryDocumentSnapshot> directDocs) async {
     Map<String, FriendData> friendMap = {};
-    final groupQuery = await FirebaseFirestore.instance.collection('groups').where('members', arrayContains: 'You').get();
+    final myUid = AuthService().currentUser?.uid ?? '';
 
+    // 1. FETCH FROM GROUPS
+    final groupQuery = await FirebaseFirestore.instance.collection('groups').where('members', arrayContains: 'You').get();
     for (var gDoc in groupQuery.docs) {
       final gData = gDoc.data();
       final groupName = gData['name'] ?? 'Unnamed';
@@ -116,6 +119,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
       }
     }
 
+    // 2. FETCH FROM DIRECT PAYMENTS
     for (var doc in directDocs) {
       final data = doc.data() as Map<String, dynamic>;
       final fName = data['friendName'] as String;
@@ -128,6 +132,25 @@ class _FriendsPanelState extends State<FriendsPanel> {
       if (data['youPaid'] == true) friendMap[fName]!.netBalance += amt;
       else friendMap[fName]!.netBalance -= amt;
     }
+
+    // 🌐 3. NEW: FETCH FROM YOUR GLOBAL NETWORK (CONNECTIONS)
+    if (myUid.isNotEmpty) {
+      final connectionsQuery = await FirebaseFirestore.instance.collection('users').doc(myUid).collection('connections').get();
+      for (var doc in connectionsQuery.docs) {
+        final cData = doc.data();
+        final cName = cData['name'] as String;
+        // If they aren't already in the list from groups or payments, add them now!
+        if (!friendMap.containsKey(cName)) {
+          friendMap[cName] = FriendData(
+            name: cName, 
+            sharedGroups: [], 
+            netBalance: 0, 
+            lastActivity: _parseDate(cData['addedAt']) // Sort them by when you added them
+          );
+        }
+      }
+    }
+
     return friendMap.values.toList();
   }
 
@@ -181,11 +204,48 @@ class _FriendsPanelState extends State<FriendsPanel> {
               },
             ),
           ),
+
+          
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-            child: GestureDetector(
-              onTap: () { Navigator.pop(context); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => const _NewDirectPaymentSheet()); },
-              child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(12)), child: const Center(child: Text('+ Record New Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)))),
+            child: Column(
+              mainAxisSize: MainAxisSize.min, // Ensures the column only takes up the space it needs
+              children: [
+                // --- NEW: Find Friends Button ---
+                GestureDetector(
+                  onTap: () { 
+                    Navigator.pop(context); 
+                    showModalBottomSheet(
+                      context: context, 
+                      isScrollControlled: true, 
+                      backgroundColor: Colors.transparent, 
+                      builder: (_) => const AddFriendSheet() // Make sure to import this at the top!
+                    ); 
+                  },
+                  child: Container(
+                    width: double.infinity, 
+                    padding: const EdgeInsets.symmetric(vertical: 14), 
+                    decoration: BoxDecoration(
+                      color: Colors.transparent, 
+                      borderRadius: BorderRadius.circular(12), 
+                      border: Border.all(color: AppColors.orange, width: 1.5) // A nice orange outline
+                    ), 
+                    child: const Center(
+                      child: Text('👤 Add a New Friend', 
+                        style: TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.orange)
+                      )
+                    )
+                  ),
+                ),
+                
+                const SizedBox(height: 12), // Spacing between the two buttons
+                
+                // --- EXISTING: Your original Record Payment Button ---
+                GestureDetector(
+                  onTap: () { Navigator.pop(context); showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => const _NewDirectPaymentSheet()); },
+                  child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(12)), child: const Center(child: Text('+ Record New Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: Colors.white)))),
+                ),
+              ],
             ),
           )
         ],

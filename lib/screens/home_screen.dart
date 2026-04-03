@@ -1,3 +1,4 @@
+import '../services/notification_service.dart';
 import 'dart:async';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
@@ -933,9 +934,11 @@ class _LiveGlobalHeaderState extends State<LiveGlobalHeader> {
   void initState() {
     super.initState();
     _fetchTotals();
-    // This polls Firestore every 2 seconds. When you press "Back" from a group, 
-    // it guarantees the Home Screen updates instantly without needing a full screen reload!
+    // This polls Firestore every 2 seconds...
     _timer = Timer.periodic(const Duration(seconds: 2), (_) => _fetchTotals());
+    
+    //Start listening for notifications as soon as the header loads!
+    NotificationService().init();
   }
 
   @override

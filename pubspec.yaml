@@ -33,6 +33,7 @@ dependencies:
   url_launcher: ^6.3.2
   font_awesome_flutter: ^11.0.0
   flutter_dotenv: ^6.0.0
+  flutter_contacts: ^2.0.1
 
 dev_dependencies:
   flutter_test:
