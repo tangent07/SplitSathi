@@ -1,3 +1,4 @@
+import 'add_friend_sheet.dart';
 import '../services/notification_service.dart';
 import 'dart:async';
 import '../services/auth_service.dart';
@@ -54,6 +55,7 @@ class HomeScreen extends StatelessWidget {
 
       // Friends FAB
       floatingActionButton: FloatingActionButton(
+        tooltip: 'Your Network',
         onPressed: () {
           HapticFeedback.mediumImpact();
           
@@ -718,40 +720,45 @@ class _EditGroupSheet extends StatefulWidget {
 class _EditGroupSheetState extends State<_EditGroupSheet> {
   late TextEditingController _nameController;
   late String _selectedEmoji;
-  late List<String> _members;
-  final _memberController = TextEditingController();
+  late Set<String> _selectedMemberNames; // Changed to a Set for easier toggling!
+  bool _isLoading = false;
 
   @override
   void initState() {
     super.initState();
     _nameController = TextEditingController(text: widget.group.name);
     _selectedEmoji = widget.group.emoji;
-    _members = List.from(widget.group.members);
+    _selectedMemberNames = Set.from(widget.group.members);
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _memberController.dispose();
     super.dispose();
   }
 
-  void _addMember() {
-    final name = _memberController.text.trim();
-    if (name.isEmpty || _members.contains(name)) return;
-    setState(() => _members.add(name));
-    _memberController.clear();
+  void _toggleFriend(String friendName) {
+    if (friendName == 'You') return; // Cannot remove yourself!
+    setState(() {
+      if (_selectedMemberNames.contains(friendName)) {
+        _selectedMemberNames.remove(friendName);
+      } else {
+        _selectedMemberNames.add(friendName);
+      }
+    });
   }
 
   void _save() async {
     final name = _nameController.text.trim();
     if (name.isEmpty) return;
     
+    setState(() => _isLoading = true);
+    
     await DatabaseService().updateGroup(
       widget.group.id, 
       name, 
       _selectedEmoji, 
-      _members
+      _selectedMemberNames.toList()
     );
     
     if (mounted) Navigator.pop(context);
@@ -764,6 +771,7 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
     final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
     final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
     final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
+    final myUid = AuthService().currentUser?.uid ?? '';
 
     return Container(
       decoration: BoxDecoration(
@@ -774,46 +782,50 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
         left: 20, right: 20, top: 16,
         bottom: MediaQuery.of(context).viewInsets.bottom + 24,
       ),
-      child: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
-            )),
-            const SizedBox(height: 16),
-            Text('Edit Group', style: TextStyle(
-              fontFamily: 'Nunito', fontSize: 22,
-              fontWeight: FontWeight.w900, color: textColor,
-            )),
-            const SizedBox(height: 20),
+      height: MediaQuery.of(context).size.height * 0.85, // Added height constraint for the ListView
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(child: Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
+          )),
+          const SizedBox(height: 16),
+          Text('Edit Group', style: TextStyle(
+            fontFamily: 'Nunito', fontSize: 22,
+            fontWeight: FontWeight.w900, color: textColor,
+          )),
+          const SizedBox(height: 20),
 
-            // Name
-            _label('GROUP NAME'),
-            const SizedBox(height: 8),
-            TextField(
-              controller: _nameController,
-              style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-              decoration: InputDecoration(
-                filled: true, fillColor: inputBg,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
-              ),
+          // Name
+          _label('GROUP NAME'),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _nameController,
+            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+            decoration: InputDecoration(
+              filled: true, fillColor: inputBg,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
             ),
-            const SizedBox(height: 20),
+          ),
+          const SizedBox(height: 20),
 
-            // Emoji
-            _label('PICK AN EMOJI'),
-            const SizedBox(height: 8),
-            Wrap(
+          // Emoji
+          _label('PICK AN EMOJI'),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Wrap(
               spacing: 8, runSpacing: 8,
               children: AppConstants.groupEmojis.map((emoji) {
                 final isSelected = emoji == _selectedEmoji;
                 return GestureDetector(
-                  onTap: () => setState(() => _selectedEmoji = emoji),
+                  onTap: () {
+                    HapticFeedback.selectionClick();
+                    setState(() => _selectedEmoji = emoji);
+                  },
                   child: Container(
                     width: 52, height: 52,
                     decoration: BoxDecoration(
@@ -829,87 +841,112 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
                 );
               }).toList(),
             ),
-            const SizedBox(height: 20),
+          ),
+          const SizedBox(height: 20),
 
-            // Members
-            _label('MEMBERS'),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8, runSpacing: 8,
-              children: _members.map((m) {
-                final isYou = m == 'You';
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: isYou ? AppColors.orange.withOpacity(0.15) : inputBg,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: isYou ? AppColors.orange : borderColor),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(m, style: TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                        fontSize: 13,
-                        color: isYou ? AppColors.orange : textColor,
-                      )),
-                      if (!isYou) ...[
-                        const SizedBox(width: 6),
-                        GestureDetector(
-                          onTap: () => setState(() => _members.remove(m)),
-                          child: const Icon(Icons.close, size: 14, color: AppColors.muted),
-                        ),
-                      ],
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: _memberController,
-                    onSubmitted: (_) => _addMember(),
-                    style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-                    decoration: InputDecoration(
-                      hintText: 'Add member...',
-                      hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)),
-                      filled: true, fillColor: inputBg,
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                      enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-                      focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                GestureDetector(
-                  onTap: _addMember,
-                  child: Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(12)),
-                    child: const Icon(Icons.add, color: Colors.white),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
-
-            GestureDetector(
-              onTap: _save,
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-                child: const Center(child: Text('Save Changes →', style: TextStyle(
-                  fontFamily: 'Nunito', fontSize: 16,
-                  fontWeight: FontWeight.w800, color: Colors.white,
-                ))),
+          // Members Label & Splitwise Add Friend Bar
+          _label('GROUP MEMBERS'),
+          const SizedBox(height: 12),
+          GestureDetector(
+            onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => const AddFriendSheet()),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+              decoration: BoxDecoration(
+                color: inputBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.orange.withOpacity(0.5), width: 1.5),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.person_add_alt_1, color: AppColors.orange, size: 20),
+                  SizedBox(width: 12),
+                  Text('Search or add a new friend...', style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.orange)),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+          const SizedBox(height: 16),
+
+          // Network List (The Tappable Cards!)
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').doc(myUid).collection('connections').orderBy('name').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppColors.orange));
+                
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(
+                    child: Text("Your group is empty.\nTap above to add someone!", textAlign: TextAlign.center, style: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted, height: 1.5)),
+                  );
+                }
+
+                final friends = snapshot.data!.docs;
+
+                return ListView.builder(
+                  itemCount: friends.length,
+                  itemBuilder: (context, index) {
+                    final friendData = friends[index].data() as Map<String, dynamic>;
+                    final friendName = friendData['name']?.toString() ?? 'Unknown';
+                    final isSelected = _selectedMemberNames.contains(friendName);
+
+                    return GestureDetector(
+                      onTap: () => _toggleFriend(friendName),
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 12),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isSelected ? AppColors.orange.withOpacity(0.1) : Colors.transparent,
+                          border: Border.all(color: isSelected ? AppColors.orange : borderColor, width: 1.5),
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 40, height: 40,
+                              decoration: BoxDecoration(color: isSelected ? AppColors.orange : (isDark ? AppColors.darkSurface2 : Colors.grey[200]), borderRadius: BorderRadius.circular(12)),
+                              child: Center(
+                                child: Text(
+                                  friendName.isNotEmpty ? friendName[0].toUpperCase() : '?', 
+                                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w900, color: isSelected ? Colors.white : textColor)
+                                )
+                              ),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(friendName, style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: textColor)),
+                                  Text(friendData['email'] ?? friendData['phone'] ?? '', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
+                                ],
+                              ),
+                            ),
+                            if (isSelected) const Icon(Icons.check_circle, color: AppColors.orange),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          GestureDetector(
+            onTap: _isLoading ? null : _save,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              decoration: BoxDecoration(color: _isLoading ? Colors.grey : AppColors.orange, borderRadius: BorderRadius.circular(14)),
+              child: Center(child: _isLoading 
+                ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                : const Text('Save Changes →', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

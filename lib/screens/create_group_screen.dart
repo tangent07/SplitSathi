@@ -55,14 +55,11 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
     try {
       final myUid = AuthService().currentUser!.uid;
       
-      // 1. Prepare the exact arrays Firebase needs to sync between phones
-      List<String> memberUids = [myUid];
-      Map<String, String> memberNames = {myUid: 'You'};
+    List<String> membersList = ['You'];
 
-      for (var friend in _selectedFriends) {
-        memberUids.add(friend['uid']);
-        memberNames[friend['uid']] = friend['name'];
-      }
+    for (var friend in _selectedFriends) {
+      membersList.add(friend['name']);
+    }
 
       // 2. Save directly to Firestore with the UIDs AND your Emoji!
       await FirebaseFirestore.instance.collection('groups').add({
@@ -70,8 +67,7 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
         'icon': _selectedEmoji,
         'createdAt': FieldValue.serverTimestamp(),
         'createdBy': myUid,
-        'members': memberUids,      // <--- This array makes the app Multi-player!
-        'memberNames': memberNames, 
+        'members': membersList,      // <--- This array makes the app Multi-player! 
         'totalExpenses': 0.0,
       });
 

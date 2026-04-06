@@ -169,9 +169,9 @@ class _FriendsPanelState extends State<FriendsPanel> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('👥 Friends', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w800, color: textColor)), GestureDetector(onTap: () => Navigator.pop(context), child: Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.close, size: 16, color: AppColors.muted)))]),
+                Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [Text('👥 Your Network', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w800, color: textColor)), GestureDetector(onTap: () => Navigator.pop(context), child: Container(padding: const EdgeInsets.all(4), decoration: BoxDecoration(color: isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(8)), child: const Icon(Icons.close, size: 16, color: AppColors.muted)))]),
                 const SizedBox(height: 12),
-                TextField(controller: _searchController, onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()), style: TextStyle(color: textColor, fontFamily: 'Nunito', fontSize: 14), decoration: InputDecoration(hintText: 'Search friends...', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: isDark ? AppColors.darkSurface2 : Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))),
+                TextField(controller: _searchController, onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()), style: TextStyle(color: textColor, fontFamily: 'Nunito', fontSize: 14), decoration: InputDecoration(hintText: 'Search friends in your network...', hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted), filled: true, fillColor: isDark ? AppColors.darkSurface2 : Colors.white, contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10), border: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(10), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)))),
               ],
             ),
           ),
@@ -231,7 +231,7 @@ class _FriendsPanelState extends State<FriendsPanel> {
                       border: Border.all(color: AppColors.orange, width: 1.5) // A nice orange outline
                     ), 
                     child: const Center(
-                      child: Text('👤 Add a New Friend', 
+                      child: Text('👤 Add friend to your network', 
                         style: TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.orange)
                       )
                     )

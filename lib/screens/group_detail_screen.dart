@@ -1,3 +1,5 @@
+import 'add_friend_sheet.dart';
+import '../services/auth_service.dart';
 import '../services/db_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -157,17 +159,57 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
+                  // NEW TOP BAR WITH ACTION ICONS!
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        Icon(Icons.arrow_back, color: AppColors.orange, size: 18),
-                        const SizedBox(width: 4),
-                        Text('Back', style: TextStyle(color: AppColors.orange, fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 14)),
+                        // Back Button
+                        GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.arrow_back, color: AppColors.orange, size: 18),
+                              const SizedBox(width: 4),
+                              Text('Back', style: TextStyle(color: AppColors.orange, fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 14)),
+                            ],
+                          ),
+                        ),
+                        // Action Icons (+ and x)
+                        Row(
+                          children: [
+                            GestureDetector(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                showModalBottomSheet(
+                                  context: context,
+                                  isScrollControlled: true,
+                                  backgroundColor: Colors.transparent,
+                                  builder: (_) => _AddGroupMemberSheet(group: group),
+                                );
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: AppColors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                                child: const Icon(Icons.person_add_alt_1, color: AppColors.orange, size: 20),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            GestureDetector(
+                              onTap: () {
+                                HapticFeedback.lightImpact();
+                                _confirmDeleteGroup(context, group, isDark);
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(color: AppColors.error.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                                child: const Icon(Icons.delete_outline, color: AppColors.error, size: 20),
+                              ),
+                            ),
+                          ],
+                        )
                       ],
                     ),
-                  ),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -264,6 +306,39 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 }
+void _confirmDeleteGroup(BuildContext context, Group group, bool isDark) {
+    showDialog(
+      context: context,
+      // We explicitly name this 'dialogContext' so Flutter knows exactly which screen is which!
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: Text('Delete "${group.name}"?', style: const TextStyle(
+          fontFamily: 'Nunito', fontWeight: FontWeight.w900,
+        )),
+        content: const Text('This will permanently delete the group and all its expenses. This cannot be undone.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel', style: TextStyle(color: AppColors.muted)),
+          ),
+          TextButton(
+            onPressed: () {
+              // 1. Close the Dialog instantly
+              Navigator.pop(dialogContext); 
+              
+              // 2. Close the Group Screen instantly (brings you back to Home)
+              Navigator.pop(context); 
+              
+              // 3. Fire and Forget: Delete the database record in the background!
+              DatabaseService().deleteGroup(group.id); 
+            },
+            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
+          ),
+        ],
+      ),
+    );
+  }
 
 // ── EXPENSES TAB ───────────────────────────────────────────────────
 class _ExpensesTab extends StatelessWidget {
@@ -1041,4 +1116,163 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
     );
   }
   Widget _label(String text) => Text(text, style: const TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5));
+}
+
+// ── ADD FRIEND TO GROUP SHEET ──────────────────────────────────────
+class _AddGroupMemberSheet extends StatefulWidget {
+  final Group group;
+  const _AddGroupMemberSheet({required this.group});
+
+  @override
+  State<_AddGroupMemberSheet> createState() => _AddGroupMemberSheetState();
+}
+
+class _AddGroupMemberSheetState extends State<_AddGroupMemberSheet> {
+  final _searchController = TextEditingController();
+  String _searchQuery = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  void _addMember(BuildContext context, String newMemberName) async {
+    if (widget.group.members.contains(newMemberName)) return;
+
+    final updatedMembers = List<String>.from(widget.group.members)..add(newMemberName);
+    
+    await DatabaseService().updateGroup(
+      widget.group.id, 
+      widget.group.name, 
+      widget.group.emoji, 
+      updatedMembers
+    );
+    
+    if (context.mounted) {
+      Navigator.pop(context); 
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('$newMemberName added to group! ✅', style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
+        backgroundColor: AppColors.success,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.watch<AppProvider>().isDark;
+    final bg = isDark ? AppColors.darkSurface : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
+    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
+    final myUid = AuthService().currentUser?.uid ?? '';
+
+    return Container(
+      decoration: BoxDecoration(color: bg, borderRadius: const BorderRadius.vertical(top: Radius.circular(24))),
+      padding: EdgeInsets.only(left: 20, right: 20, top: 16, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
+      height: MediaQuery.of(context).size.height * 0.8, // Made taller for the keyboard!
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 16),
+          Text('Add Friend to Group', style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
+          const SizedBox(height: 16),
+
+          // 1. REAL SEARCH BAR
+          TextField(
+            controller: _searchController,
+            onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
+            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+            decoration: InputDecoration(
+              hintText: 'Search friends in your network...',
+              hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.5)),
+              prefixIcon: const Icon(Icons.search, color: AppColors.orange),
+              filled: true, fillColor: inputBg,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
+              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          // 2. ADD TO NETWORK BUTTON (Just like the Edit Group screen!)
+          GestureDetector(
+            onTap: () => showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => const AddFriendSheet()),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: inputBg,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.orange.withOpacity(0.5), width: 1.5),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.person_add_alt_1, color: AppColors.orange, size: 20),
+                  SizedBox(width: 12),
+                  Text('Add friend to your network...', style: TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.orange)),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+
+          // 3. THE LIVE NETWORK LIST
+          Expanded(
+            child: StreamBuilder<QuerySnapshot>(
+              stream: FirebaseFirestore.instance.collection('users').doc(myUid).collection('connections').orderBy('name').snapshots(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator(color: AppColors.orange));
+                
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return Center(child: Text("No friends in your network yet.", style: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted)));
+                }
+
+                // Filter out existing members AND apply search query!
+                final availableFriends = snapshot.data!.docs.where((doc) {
+                  final name = (doc.data() as Map<String, dynamic>)['name']?.toString() ?? '';
+                  final isNotInGroup = !widget.group.members.contains(name);
+                  final matchesSearch = name.toLowerCase().contains(_searchQuery);
+                  return isNotInGroup && matchesSearch;
+                }).toList();
+
+                if (availableFriends.isEmpty) {
+                  if (_searchQuery.isNotEmpty) {
+                     return Center(child: Text("No friends found matching '$_searchQuery'", style: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted)));
+                  }
+                  return Center(child: Text("All your friends are already in this group! 🎉", style: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted)));
+                }
+
+                return ListView.builder(
+                  itemCount: availableFriends.length,
+                  itemBuilder: (context, index) {
+                    final friendData = availableFriends[index].data() as Map<String, dynamic>;
+                    final friendName = friendData['name']?.toString() ?? 'Unknown';
+
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 0, vertical: 4),
+                      leading: CircleAvatar(
+                        backgroundColor: AppColors.orange.withOpacity(0.2),
+                        child: Text(friendName.isNotEmpty ? friendName[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.w800)),
+                      ),
+                      title: Text(friendName, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: textColor)),
+                      subtitle: Text(friendData['email'] ?? friendData['phone'] ?? '', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
+                      trailing: const Icon(Icons.add_circle_outline, color: AppColors.orange),
+                      onTap: () {
+                        HapticFeedback.mediumImpact();
+                        _addMember(context, friendName);
+                      },
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
