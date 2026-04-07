@@ -1,30 +1,31 @@
+import 'dart:math' as math;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
-import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
-import 'dart:math' as math;
-import 'dart:ui' as ui;
-import '../providers/app_provider.dart';
+import 'package:provider/provider.dart';
 import '../models/diary_entry.dart';
+import '../providers/app_provider.dart';
+import '../services/auth_service.dart';
+import '../services/db_service.dart';
 import '../utils/constants.dart';
 
 class MoneyDiaryScreen extends StatefulWidget {
   const MoneyDiaryScreen({super.key});
-
   @override
   State<MoneyDiaryScreen> createState() => _MoneyDiaryScreenState();
 }
 
-class _MoneyDiaryScreenState extends State<MoneyDiaryScreen>
-    with SingleTickerProviderStateMixin {
+class _MoneyDiaryScreenState extends State<MoneyDiaryScreen> with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  DateTime _selectedMonth = DateTime.now();
+  final String myUid = AuthService().currentUser?.uid ?? '';
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    // INCREASED TO 3 TABS
+    _tabController = TabController(length: 3, vsync: this);
+    DatabaseService().setupDefaultCategories(myUid);
   }
 
   @override
@@ -33,1466 +34,608 @@ class _MoneyDiaryScreenState extends State<MoneyDiaryScreen>
     super.dispose();
   }
 
-  String get _todayStr => DateFormat('yyyy-MM-dd').format(DateTime.now());
-  String get _monthStr => DateFormat('yyyy-MM').format(_selectedMonth);
-  bool get _isCurrentMonth =>
-      DateFormat('yyyy-MM').format(_selectedMonth) ==
-      DateFormat('yyyy-MM').format(DateTime.now());
-
   @override
   Widget build(BuildContext context) {
-    final provider = context.watch<AppProvider>();
-    final isDark = provider.isDark;
-    final bg = isDark ? AppColors.darkBg : AppColors.cream;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+    final isDark = context.watch<AppProvider>().isDark;
 
-    return Scaffold(
-      backgroundColor: bg,
-      body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.arrow_back, color: AppColors.orange, size: 18),
-                        const SizedBox(width: 4),
-                        Text('Back', style: TextStyle(
-                          color: AppColors.orange, fontFamily: 'Nunito',
-                          fontWeight: FontWeight.w700, fontSize: 14,
-                        )),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      const Text('📊', style: TextStyle(fontSize: 28)),
-                      const SizedBox(width: 10),
-                      Text('Money Diary', style: TextStyle(
-                        fontFamily: 'Nunito', fontSize: 26,
-                        fontWeight: FontWeight.w900, color: textColor,
-                      )),
-                    ],
-                  ),
-                  const SizedBox(height: 4),
-                  Text('Track your daily expenses', style: TextStyle(
-                    fontSize: 13,
-                    color: isDark ? AppColors.darkMuted : AppColors.muted,
-                  )),
-                  const SizedBox(height: 16),
+    return StreamBuilder<QuerySnapshot>(
+      stream: DatabaseService().getPrivateCategoriesStream(myUid),
+      builder: (context, catSnapshot) {
+        final categories = (catSnapshot.data?.docs ?? []).map((doc) => 
+          {'id': doc.id, 'name': doc['name'], 'icon': doc['icon']}).toList();
 
-                  // Tabs
-                  Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkSurface2 : const Color(0xFFFFF3E0),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    padding: const EdgeInsets.all(4),
-                    child: TabBar(
-                      controller: _tabController,
-                      indicator: BoxDecoration(
-                        color: isDark ? AppColors.darkSurface : Colors.white,
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      indicatorSize: TabBarIndicatorSize.tab,
-                      dividerColor: Colors.transparent,
-                      labelColor: AppColors.orange,
-                      unselectedLabelColor: isDark ? AppColors.darkMuted : AppColors.muted,
-                      labelStyle: const TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 14,
-                      ),
-                      tabs: const [Tab(text: 'Today'), Tab(text: 'This Month')],
-                    ),
-                  ),
-                ],
+        return StreamBuilder<QuerySnapshot>(
+          stream: DatabaseService().getPrivateDiaryStream(myUid),
+          builder: (context, entrySnapshot) {
+            final allEntries = (entrySnapshot.data?.docs ?? []).map((doc) {
+              final data = doc.data() as Map<String, dynamic>;
+              return DiaryEntry(
+                id: doc.id, amount: (data['amount'] as num).toDouble(),
+                note: data['name'] ?? '', catId: data['category'] ?? 'Other',
+                date: (data['date'] as Timestamp).toDate(),
+                deleted: data['deleted'] ?? false,
+              );
+            }).toList();
+
+            final activeEntries = allEntries.where((e) => !e.deleted).toList();
+            final monthlyTotal = activeEntries
+                .where((e) => DateFormat('yyyy-MM').format(e.date) == DateFormat('yyyy-MM').format(DateTime.now()))
+                .fold(0.0, (sum, e) => sum + e.amount);
+
+            return Scaffold(
+              backgroundColor: isDark ? AppColors.darkBg : AppColors.cream,
+              floatingActionButton: FloatingActionButton.extended(
+                onPressed: () => _showCategorySelector(context, categories, isDark),
+                backgroundColor: AppColors.orange,
+                elevation: 4,
+                icon: const Icon(Icons.add, color: Colors.white),
+                label: const Text('Log Expense', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15)),
               ),
-            ),
-
-            // Tab content
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _TodayTab(
-                    provider: provider,
-                    todayStr: _todayStr,
-                    isDark: isDark,
-                  ),
-                  _MonthlyTab(
-                    provider: provider,
-                    monthStr: _monthStr,
-                    selectedMonth: _selectedMonth,
-                    isCurrentMonth: _isCurrentMonth,
-                    isDark: isDark,
-                    onMonthChanged: (dir) {
-                      setState(() {
-                        _selectedMonth = DateTime(
-                          _selectedMonth.year,
-                          _selectedMonth.month + dir,
-                        );
-                      });
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ── TODAY TAB ──────────────────────────────────────────────────────
-class _TodayTab extends StatelessWidget {
-  final AppProvider provider;
-  final String todayStr;
-  final bool isDark;
-  const _TodayTab({required this.provider, required this.todayStr, required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    final todayEntries = provider.diaryEntries.where((e) => e.dateStr == todayStr).toList();
-    final total = todayEntries.fold(0.0, (s, e) => s + e.amount);
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-
-    // Pie data
-    final pieData = <_PieSlice>[];
-    for (int i = 0; i < provider.diaryCats.length; i++) {
-      final cat = provider.diaryCats[i];
-      final catTotal = todayEntries
-          .where((e) => e.catId == cat.id)
-          .fold(0.0, (s, e) => s + e.amount);
-      if (catTotal > 0) {
-        pieData.add(_PieSlice(
-          label: cat.name,
-          value: catTotal,
-          color: AppConstants.getPieColor(i),
-        ));
-      }
-    }
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
-      children: [
-        // Summary card
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text("TODAY'S SPENDING", style: TextStyle(
-                    fontFamily: 'Nunito', fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.orange, letterSpacing: 0.5,
-                  )),
-                  Text('Entries: ${todayEntries.length}', style: TextStyle(
-                    fontSize: 12,
-                    color: isDark ? AppColors.darkMuted : AppColors.muted,
-                  )),
-                ],
-              ),
-              Divider(color: borderColor, height: 20),
-              Row(
-                children: [
-                  // Pie chart
-                  SizedBox(
-                    width: 120, height: 120,
-                    child: CustomPaint(
-                      painter: _PiePainter(
-                        slices: pieData,
-                        total: total,
-                        centerText: total > 0 ? '₹${total.round()}' : '',
-                        isDark: isDark,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-
-                  // Legend
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('CATEGORIES', style: TextStyle(
-                          fontFamily: 'Nunito', fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.orange, letterSpacing: 0.5,
-                        )),
-                        const SizedBox(height: 8),
-                        if (pieData.isEmpty)
-                          Text('No spending yet today', style: TextStyle(
-                            fontSize: 12,
-                            color: isDark ? AppColors.darkMuted : AppColors.muted,
-                          ))
-                        else
-                          ...pieData.map((s) => Padding(
-                            padding: const EdgeInsets.only(bottom: 4),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 8, height: 8,
-                                  decoration: BoxDecoration(
-                                    color: s.color,
-                                    borderRadius: BorderRadius.circular(2),
-                                  ),
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(child: Text(s.label, style: TextStyle(
-                                  fontSize: 12, color: textColor,
-                                ))),
-                                Text('₹${s.value.round()}', style: const TextStyle(
-                                  fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                                  fontSize: 12, color: AppColors.orange,
-                                )),
-                              ],
-                            ),
-                          )),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Categories list
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            const Text('CATEGORIES', style: TextStyle(
-              fontFamily: 'Nunito', fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: AppColors.orange, letterSpacing: 0.5,
-            )),
-            GestureDetector(
-              onTap: () => _showAddCatSheet(context),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.orange,
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text('+ Add', style: TextStyle(
-                  fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                  fontSize: 13, color: Colors.white,
-                )),
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        ...provider.diaryCats.asMap().entries.map((entry) {
-          final i = entry.key;
-          final cat = entry.value;
-          final catEntries = todayEntries.where((e) => e.catId == cat.id).toList();
-          final catTotal = catEntries.fold(0.0, (s, e) => s + e.amount);
-          final color = AppConstants.getPieColor(i);
-
-          return GestureDetector(
-            onTap: () => _openCatDetail(context, cat, isDark),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
-              decoration: BoxDecoration(
-                border: Border(bottom: BorderSide(color: borderColor)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40, height: 40,
-                    decoration: BoxDecoration(
-                      color: color.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(color: color, width: 1.5),
-                    ),
-                    child: Center(child: Text(cat.icon, style: const TextStyle(fontSize: 18))),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(cat.name, style: TextStyle(
-                          fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                          fontSize: 14, color: textColor,
-                        )),
-                        Text('${catEntries.length} entries', style: TextStyle(
-                          fontSize: 11,
-                          color: isDark ? AppColors.darkMuted : AppColors.muted,
-                        )),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    catTotal > 0 ? '₹${catTotal.round()}' : '₹0',
-                    style: TextStyle(
-                      fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                      fontSize: 15,
-                      color: catTotal > 0 ? color : (isDark ? AppColors.darkMuted : AppColors.muted),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  GestureDetector(
-                    onTap: () => _showEditCatSheet(context, cat),
-                    child: Container(
-                      width: 28, height: 28,
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkSurface2 : AppColors.peach,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: borderColor),
-                      ),
-                      child: const Center(child: Text('✏️', style: TextStyle(fontSize: 12))),
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  GestureDetector(
-                    onTap: () => _confirmDeleteCat(context, cat, provider, isDark),
-                    child: Container(
-                      width: 28, height: 28,
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.darkSurface2 : AppColors.peach,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: borderColor),
-                      ),
-                      child: const Center(child: Text('🗑️', style: TextStyle(fontSize: 12))),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }),
-      ],
-    );
-  }
-
-  void _openCatDetail(BuildContext context, DiaryCategory cat, bool isDark) {
-    Navigator.push(context, MaterialPageRoute(
-      builder: (_) => _CatDetailScreen(cat: cat),
-    ));
-  }
-
-  void _showAddCatSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AddCatSheet(),
-    );
-  }
-
-  void _showEditCatSheet(BuildContext context, DiaryCategory cat) {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _EditCatSheet(cat: cat),
-    );
-  }
-
-  void _confirmDeleteCat(BuildContext context, DiaryCategory cat,
-      AppProvider provider, bool isDark) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Delete "${cat.name}"?', style: const TextStyle(
-          fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-        )),
-        content: const Text('All expenses in this category will be deleted.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel', style: TextStyle(color: AppColors.muted)),
-          ),
-          TextButton(
-            onPressed: () {
-              provider.deleteDiaryCategory(cat.id);
-              Navigator.pop(context);
-            },
-            child: const Text('Delete', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── MONTHLY TAB ────────────────────────────────────────────────────
-class _MonthlyTab extends StatelessWidget {
-  final AppProvider provider;
-  final String monthStr;
-  final DateTime selectedMonth;
-  final bool isCurrentMonth;
-  final bool isDark;
-  final Function(int) onMonthChanged;
-
-  const _MonthlyTab({
-    required this.provider,
-    required this.monthStr,
-    required this.selectedMonth,
-    required this.isCurrentMonth,
-    required this.isDark,
-    required this.onMonthChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final monthEntries = provider.diaryEntries
-        .where((e) => e.monthStr == monthStr)
-        .toList();
-    final total = monthEntries.fold(0.0, (s, e) => s + e.amount);
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-
-    final pieData = <_PieSlice>[];
-    for (int i = 0; i < provider.diaryCats.length; i++) {
-      final cat = provider.diaryCats[i];
-      final catTotal = monthEntries
-          .where((e) => e.catId == cat.id)
-          .fold(0.0, (s, e) => s + e.amount);
-      if (catTotal > 0) {
-        pieData.add(_PieSlice(
-          label: cat.name,
-          value: catTotal,
-          color: AppConstants.getPieColor(i),
-        ));
-      }
-    }
-
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
-      children: [
-        // Month navigator
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : Colors.white,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: borderColor),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              GestureDetector(
-                onTap: () => onMonthChanged(-1),
-                child: Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkSurface2 : AppColors.peach,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.chevron_left, color: AppColors.orange),
-                ),
-              ),
-              Column(
-                children: [
-                  Text(
-                    DateFormat('MMMM').format(selectedMonth),
-                    style: TextStyle(
-                      fontFamily: 'Nunito', fontSize: 18,
-                      fontWeight: FontWeight.w900, color: textColor,
-                    ),
-                  ),
-                  Text(
-                    selectedMonth.year.toString(),
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: isDark ? AppColors.darkMuted : AppColors.muted,
-                    ),
-                  ),
-                ],
-              ),
-              GestureDetector(
-                onTap: isCurrentMonth ? null : () => onMonthChanged(1),
-                child: Container(
-                  width: 36, height: 36,
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkSurface2 : AppColors.peach,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Icon(
-                    Icons.chevron_right,
-                    color: isCurrentMonth ? AppColors.muted.withOpacity(0.3) : AppColors.orange,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-
-        // Pie chart card
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.darkSurface : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor),
-          ),
-          child: Column(
-            children: [
-              SizedBox(
-                width: 180, height: 180,
-                child: CustomPaint(
-                  painter: _PiePainter(
-                    slices: pieData,
-                    total: total,
-                    centerText: total > 0 ? '₹${total.round()}' : '',
-                    isDark: isDark,
-                    size: 180,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 12),
-              if (pieData.isEmpty)
-                Text('No spending this month', style: TextStyle(
-                  fontSize: 13,
-                  color: isDark ? AppColors.darkMuted : AppColors.muted,
-                ))
-              else
-                ...pieData.map((s) => Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 10, height: 10,
-                        decoration: BoxDecoration(
-                          color: s.color,
-                          borderRadius: BorderRadius.circular(3),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(s.label, style: TextStyle(
-                        fontSize: 13, color: textColor,
-                      ))),
-                      Text('₹${s.value.round()}', style: const TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                        fontSize: 13, color: AppColors.orange,
-                      )),
-                    ],
-                  ),
-                )),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-
-        // Category rows
-        const Text('CATEGORIES', style: TextStyle(
-          fontFamily: 'Nunito', fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: AppColors.orange, letterSpacing: 0.5,
-        )),
-        const SizedBox(height: 12),
-
-        ...provider.diaryCats.asMap().entries.map((entry) {
-          final i = entry.key;
-          final cat = entry.value;
-          final catTotal = monthEntries
-              .where((e) => e.catId == cat.id)
-              .fold(0.0, (s, e) => s + e.amount);
-          final color = AppConstants.getPieColor(i);
-          final pct = total > 0 ? catTotal / total : 0.0;
-
-          return Container(
-            padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 4),
-            decoration: BoxDecoration(
-              border: Border(bottom: BorderSide(color: borderColor)),
-            ),
-            child: Column(
-              children: [
-                Row(
+              body: SafeArea(
+                child: Column(
                   children: [
-                    Container(
-                      width: 40, height: 40,
-                      decoration: BoxDecoration(
-                        color: color.withOpacity(0.15),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: color, width: 1.5),
-                      ),
-                      child: Center(child: Text(cat.icon, style: const TextStyle(fontSize: 18))),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(cat.name, style: TextStyle(
-                      fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                      fontSize: 14, color: textColor,
-                    ))),
-                    Text(
-                      catTotal > 0 ? '₹${catTotal.round()}' : '₹0',
-                      style: TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                        fontSize: 15,
-                        color: catTotal > 0 ? color : (isDark ? AppColors.darkMuted : AppColors.muted),
+                    _buildHeader(context, isDark, monthlyTotal, activeEntries, categories),
+                    Expanded(
+                      child: TabBarView(
+                        controller: _tabController,
+                        children: [
+                          _TodayTab(categories: categories, entries: allEntries, isDark: isDark, myUid: myUid),
+                          _HistoryTab(entries: allEntries, isDark: isDark),
+                          _PastMonthsTab(entries: allEntries, isDark: isDark), // NEW TAB
+                        ],
                       ),
                     ),
                   ],
                 ),
-                if (catTotal > 0) ...[
-                  const SizedBox(height: 8),
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(4),
-                    child: LinearProgressIndicator(
-                      value: pct,
-                      backgroundColor: isDark ? AppColors.darkSurface2 : AppColors.peach,
-                      valueColor: AlwaysStoppedAnimation<Color>(color),
-                      minHeight: 5,
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, bool isDark, double total, List<DiaryEntry> entries, List<Map<String, dynamic>> cats) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+      child: Column(
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.orange, size: 20), onPressed: () => Navigator.pop(context)),
+              const Text('Money Diary', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.orange)),
+              IconButton(icon: const Icon(Icons.grid_view_rounded, color: AppColors.orange, size: 22), onPressed: () => _manageCategories(context)),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Container(
+            width: double.infinity, height: 175, padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(colors: [AppColors.orange, Color(0xFFFB923C)]),
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [BoxShadow(color: AppColors.orange.withOpacity(0.3), blurRadius: 10, offset: const Offset(0, 6))],
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('TOTAL SPENT', style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+                      const SizedBox(height: 4),
+                      Text('₹${total.round()}', style: const TextStyle(color: Colors.white, fontSize: 34, fontWeight: FontWeight.w900)),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  flex: 2, 
+                  child: Center(
+                    child: SizedBox(
+                      width: 110, height: 110, 
+                      // ANIMATED PIE CHART
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(begin: 0, end: 1),
+                        duration: const Duration(milliseconds: 1200),
+                        curve: Curves.easeOutCubic,
+                        builder: (context, value, child) {
+                          return CustomPaint(painter: _MiniPiePainter(entries: entries, categories: cats, animationValue: value));
+                        },
+                      ),
                     ),
                   ),
-                ],
+                ),
               ],
             ),
-          );
-        }),
-      ],
-    );
-  }
-}
-
-// ── CATEGORY DETAIL SCREEN ─────────────────────────────────────────
-class _CatDetailScreen extends StatelessWidget {
-  final DiaryCategory cat;
-  const _CatDetailScreen({required this.cat});
-
-  @override
-  Widget build(BuildContext context) {
-    final provider = context.watch<AppProvider>();
-    final isDark = provider.isDark;
-    final bg = isDark ? AppColors.darkBg : AppColors.cream;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
-    final month = DateFormat('yyyy-MM').format(DateTime.now());
-
-    final allEntries = provider.diaryEntries
-        .where((e) => e.catId == cat.id)
-        .toList()
-      ..sort((a, b) => b.date.compareTo(a.date));
-
-    final todayTotal = allEntries
-        .where((e) => e.dateStr == today)
-        .fold(0.0, (s, e) => s + e.amount);
-    final monthTotal = allEntries
-        .where((e) => e.monthStr == month)
-        .fold(0.0, (s, e) => s + e.amount);
-
-    final catIdx = provider.diaryCats.indexWhere((c) => c.id == cat.id);
-    final color = AppConstants.getPieColor(catIdx >= 0 ? catIdx : 0);
-
-    return Scaffold(
-      backgroundColor: bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.arrow_back, color: AppColors.orange, size: 18),
-                        const SizedBox(width: 4),
-                        Text('Back', style: TextStyle(
-                          color: AppColors.orange, fontFamily: 'Nunito',
-                          fontWeight: FontWeight.w700, fontSize: 14,
-                        )),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Container(
-                        width: 52, height: 52,
-                        decoration: BoxDecoration(
-                          color: color.withOpacity(0.15),
-                          borderRadius: BorderRadius.circular(16),
-                          border: Border.all(color: color, width: 1.5),
-                        ),
-                        child: Center(child: Text(cat.icon, style: const TextStyle(fontSize: 24))),
-                      ),
-                      const SizedBox(width: 14),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(cat.name, style: TextStyle(
-                            fontFamily: 'Nunito', fontSize: 24,
-                            fontWeight: FontWeight.w900, color: textColor,
-                          )),
-                          Text('${allEntries.length} total entries',
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: isDark ? AppColors.darkMuted : AppColors.muted,
-                            )),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Stats
-                  Row(
-                    children: [
-                      Expanded(child: _statCard('Today', '₹${todayTotal.round()}',
-                          isDark, borderColor)),
-                      const SizedBox(width: 12),
-                      Expanded(child: _statCard('This Month', '₹${monthTotal.round()}',
-                          isDark, borderColor)),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-
-            Expanded(
-              child: allEntries.isEmpty
-                  ? Center(child: Text('No entries yet', style: TextStyle(
-                      fontSize: 15, color: isDark ? AppColors.darkMuted : AppColors.muted,
-                    )))
-                  : ListView.builder(
-                      padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
-                      itemCount: allEntries.length,
-                      itemBuilder: (context, i) {
-                        final e = allEntries[i];
-                        final date = DateFormat('d MMM yyyy').format(e.date);
-                        final time = DateFormat('hh:mm a').format(e.date);
-                        return Container(
-                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                          decoration: BoxDecoration(
-                            border: Border(bottom: BorderSide(color: borderColor)),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(e.note.isEmpty ? cat.name : e.note,
-                                      style: TextStyle(
-                                        fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                                        fontSize: 14, color: textColor,
-                                      )),
-                                    Text('$date · $time', style: TextStyle(
-                                      fontSize: 11,
-                                      color: isDark ? AppColors.darkMuted : AppColors.muted,
-                                    )),
-                                  ],
-                                ),
-                              ),
-                              Text('₹${e.amount.round()}', style: TextStyle(
-                                fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                                fontSize: 16, color: color,
-                              )),
-                              const SizedBox(width: 8),
-                              GestureDetector(
-                                onTap: () => provider.deleteDiaryEntry(e.id),
-                                child: const Icon(Icons.close, size: 16, color: AppColors.error),
-                              ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-            ),
-          ],
-        ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () => _showAddEntrySheet(context, cat),
-        backgroundColor: AppColors.orange,
-        child: const Icon(Icons.add, color: Colors.white),
-      ),
-    );
-  }
-
-  Widget _statCard(String label, String value, bool isDark, Color border) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(label, style: const TextStyle(
-            fontFamily: 'Nunito', fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: AppColors.orange, letterSpacing: 0.5,
-          )),
-          const SizedBox(height: 4),
-          Text(value, style: const TextStyle(
-            fontFamily: 'Nunito', fontSize: 22,
-            fontWeight: FontWeight.w900, color: AppColors.orange,
-          )),
+          ),
+          TabBar(
+            controller: _tabController,
+            labelColor: AppColors.orange,
+            unselectedLabelColor: Colors.grey,
+            indicatorColor: AppColors.orange,
+            dividerColor: Colors.transparent,
+            labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            tabs: const [Tab(text: 'Today'), Tab(text: 'History'), Tab(text: 'Past')], // ADDED 3RD TAB
+          ),
         ],
       ),
     );
   }
 
-  void _showAddEntrySheet(BuildContext context, DiaryCategory cat) {
+  void _manageCategories(BuildContext context) {
+    showModalBottomSheet(context: context, isScrollControlled: true, builder: (_) => _ManageCategoriesSheet(myUid: myUid));
+  }
+
+  void _showCategorySelector(BuildContext context, List<Map<String, dynamic>> categories, bool isDark) {
     showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AddEntrySheet(catId: cat.id, catName: cat.name),
+      context: context, backgroundColor: Colors.transparent, isScrollControlled: true,
+      builder: (_) => _CategorySelectorSheet(categories: categories, isDark: isDark),
     );
   }
 }
 
-// ── ADD ENTRY SHEET ────────────────────────────────────────────────
-class _AddEntrySheet extends StatefulWidget {
-  final String catId;
-  final String catName;
-  const _AddEntrySheet({required this.catId, required this.catName});
+class _TodayTab extends StatelessWidget {
+  final List<Map<String, dynamic>> categories;
+  final List<DiaryEntry> entries;
+  final bool isDark;
+  final String myUid;
 
+  const _TodayTab({required this.categories, required this.entries, required this.isDark, required this.myUid});
+
+  @override
+  Widget build(BuildContext context) {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final activeToday = entries.where((e) => !e.deleted && DateFormat('yyyy-MM-dd').format(e.date) == today).toList();
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100), 
+      children: [
+        const Text('DAILY BREAKDOWN (TAP FOR HISTORY)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w900, color: Colors.grey)),
+        const SizedBox(height: 16),
+        ...categories.asMap().entries.map((entry) {
+          final cat = entry.value;
+          final spent = activeToday.where((e) => e.catId == cat['name']).fold(0.0, (s, e) => s + e.amount);
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => _showCategoryHistory(context, cat, entries, isDark, myUid),
+            child: _buildProgress(cat, spent, entry.key, isDark),
+          );
+        }),
+      ],
+    );
+  }
+
+  Widget _buildProgress(Map<String, dynamic> cat, double spent, int index, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 24), 
+      child: Column(
+        children: [
+          Row(children: [Text(cat['icon'], style: const TextStyle(fontSize: 16)), const SizedBox(width: 10), Text(cat['name'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)), const Spacer(), Text('₹${spent.round()}', style: const TextStyle(fontWeight: FontWeight.w900, color: AppColors.orange, fontSize: 14))]),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            // ANIMATED PROGRESS BAR
+            child: TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: (spent / 2000).clamp(0, 1)),
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, _) => LinearProgressIndicator(
+                value: value, 
+                backgroundColor: isDark ? Colors.white10 : Colors.black12, 
+                color: AppConstants.getPieColor(index == 0 ? 1 : index), 
+                minHeight: 8
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showCategoryHistory(BuildContext context, Map<String, dynamic> cat, List<DiaryEntry> all, bool isDark, String uid) {
+    final catHistory = all.where((e) => e.catId == cat['name'] && !e.deleted).toList();
+    showModalBottomSheet(
+      context: context, shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(25))),
+      builder: (_) => _CategoryHistorySheet(catName: cat['name'], catIcon: cat['icon'], entries: catHistory, isDark: isDark, myUid: uid),
+    );
+  }
+}
+
+class _HistoryTab extends StatelessWidget {
+  final List<DiaryEntry> entries;
+  final bool isDark;
+  const _HistoryTab({required this.entries, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    // Only show CURRENT MONTH entries in the History Tab
+    final currentMonthStr = DateFormat('yyyy-MM').format(DateTime.now());
+    final currentMonthEntries = entries.where((e) => DateFormat('yyyy-MM').format(e.date) == currentMonthStr).toList();
+    
+    if (currentMonthEntries.isEmpty) return const Center(child: Text("No history for this month."));
+    final sorted = List<DiaryEntry>.from(currentMonthEntries)..sort((a, b) => b.date.compareTo(a.date));
+
+    return ListView.separated(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+      itemCount: sorted.length,
+      separatorBuilder: (_, __) => const Divider(height: 12, color: Colors.black12),
+      itemBuilder: (context, i) {
+        final e = sorted[i];
+        if (e.deleted) {
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: Row(
+              children: [
+                const Icon(Icons.block, size: 14, color: Colors.grey),
+                const SizedBox(width: 8),
+                Text('${e.note} • ${e.catId}', style: const TextStyle(fontSize: 12, color: Colors.grey, decoration: TextDecoration.lineThrough)),
+                const Spacer(),
+                Text('₹${e.amount.round()}', style: const TextStyle(fontSize: 12, color: Colors.grey, decoration: TextDecoration.lineThrough)),
+              ],
+            ),
+          );
+        }
+        return ListTile(
+          contentPadding: EdgeInsets.zero,
+          leading: Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(color: AppColors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+            child: const Icon(Icons.receipt_long, color: AppColors.orange, size: 18),
+          ),
+          title: Text(e.note, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: isDark ? Colors.white : Colors.black87)),
+          subtitle: Text('${e.catId} • ${DateFormat('d MMM, hh:mm a').format(e.date)}', style: const TextStyle(fontSize: 11)),
+          trailing: Text('₹${e.amount.round()}', style: const TextStyle(fontWeight: FontWeight.w900, color: AppColors.orange, fontSize: 15)),
+        );
+      },
+    );
+  }
+}
+
+// ── NEW: PAST MONTHS (ARCHIVE) TAB ──
+class _PastMonthsTab extends StatelessWidget {
+  final List<DiaryEntry> entries;
+  final bool isDark;
+  const _PastMonthsTab({required this.entries, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final currentMonthStr = DateFormat('yyyy-MM').format(DateTime.now());
+    
+    // Filter OUT the current month. Keep everything else.
+    final pastEntries = entries.where((e) => DateFormat('yyyy-MM').format(e.date) != currentMonthStr).toList();
+    pastEntries.sort((a, b) => b.date.compareTo(a.date));
+
+    if (pastEntries.isEmpty) return const Center(child: Text("No records from previous months."));
+
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
+      itemCount: pastEntries.length,
+      itemBuilder: (context, i) {
+        final e = pastEntries[i];
+        final monthStr = DateFormat('MMMM yyyy').format(e.date); // e.g., "March 2026"
+        
+        // Check if this is the first item of a new month to show the Header
+        bool isFirstOfMonth = i == 0 || DateFormat('MMMM yyyy').format(pastEntries[i - 1].date) != monthStr;
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // CLEAN MONTH HEADER
+            if (isFirstOfMonth) ...[
+              if (i != 0) const SizedBox(height: 24),
+              Text(monthStr.toUpperCase(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: AppColors.orange, letterSpacing: 1.5)),
+              const SizedBox(height: 8),
+              const Divider(height: 1, color: Colors.black12),
+              const SizedBox(height: 8),
+            ],
+            
+            // CLEAN READ-ONLY RECORD (Even ghosts are shown cleanly without delete options)
+            ListTile(
+              contentPadding: const EdgeInsets.symmetric(vertical: 4),
+              leading: Opacity(
+                opacity: e.deleted ? 0.4 : 1.0,
+                child: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(color: AppColors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(10)),
+                  child: const Icon(Icons.history, color: AppColors.orange, size: 18),
+                ),
+              ),
+              title: Text(e.note, style: TextStyle(
+                fontWeight: FontWeight.w700, fontSize: 14, 
+                color: e.deleted ? Colors.grey : (isDark ? Colors.white : Colors.black87),
+                decoration: e.deleted ? TextDecoration.lineThrough : null,
+              )),
+              subtitle: Text('${e.catId} • ${DateFormat('d MMM').format(e.date)}', style: const TextStyle(fontSize: 11)),
+              trailing: Text('₹${e.amount.round()}', style: TextStyle(
+                fontWeight: FontWeight.w900, 
+                color: e.deleted ? Colors.grey.withOpacity(0.5) : AppColors.orange, 
+                fontSize: 15
+              )),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _CategorySelectorSheet extends StatelessWidget {
+  final List<Map<String, dynamic>> categories;
+  final bool isDark;
+
+  const _CategorySelectorSheet({required this.categories, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('Select a Category', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: isDark ? Colors.white : Colors.black87)),
+          const SizedBox(height: 24),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 4, mainAxisSpacing: 20, crossAxisSpacing: 10, childAspectRatio: 0.8),
+            itemCount: categories.length,
+            itemBuilder: (context, index) {
+              final cat = categories[index];
+              return GestureDetector(
+                onTap: () {
+                  Navigator.pop(context); 
+                  showModalBottomSheet(context: context, isScrollControlled: true, builder: (_) => _AddEntrySheet(catName: cat['name']));
+                },
+                child: Column(
+                  children: [
+                    Container(
+                      height: 60, width: 60,
+                      decoration: BoxDecoration(color: isDark ? AppColors.darkBg : AppColors.cream, borderRadius: BorderRadius.circular(18), border: Border.all(color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05))),
+                      child: Center(child: Text(cat['icon'], style: const TextStyle(fontSize: 26))),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(cat['name'], textAlign: TextAlign.center, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : Colors.black87), overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              );
+            }
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniPiePainter extends CustomPainter {
+  final List<DiaryEntry> entries;
+  final List<Map<String, dynamic>> categories;
+  final double animationValue; // Controls the spin animation
+  
+  _MiniPiePainter({required this.entries, required this.categories, this.animationValue = 1.0});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final total = entries.where((e) => !e.deleted).fold(0.0, (sum, e) => sum + e.amount);
+    if (total == 0) return;
+    
+    double startAngle = -math.pi / 2;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2;
+
+    for (int i = 0; i < categories.length; i++) {
+      final catAmount = entries.where((e) => !e.deleted && e.catId == categories[i]['name']).fold(0.0, (sum, e) => sum + e.amount);
+      if (catAmount > 0) {
+        // Multiply by animationValue so the pie "fills up" smoothly
+        final sweepAngle = (catAmount / total) * 2 * math.pi * animationValue;
+        final color = AppConstants.getPieColor(i == 0 ? 1 : i);
+        canvas.drawArc(Rect.fromCircle(center: center, radius: radius), startAngle, sweepAngle, true, Paint()..color = color);
+        startAngle += sweepAngle;
+      }
+    }
+    // Draw the inner hole over the animated arcs
+    canvas.drawCircle(center, radius * 0.6, Paint()..color = Colors.white.withOpacity(0.2));
+  }
+  
+  @override
+  bool shouldRepaint(covariant _MiniPiePainter oldDelegate) => 
+    oldDelegate.animationValue != animationValue || oldDelegate.entries.length != entries.length;
+}
+
+class _CategoryHistorySheet extends StatefulWidget {
+  final String catName;
+  final String catIcon;
+  final List<DiaryEntry> entries;
+  final bool isDark;
+  final String myUid;
+
+  const _CategoryHistorySheet({
+    required this.catName, required this.catIcon, required this.entries, required this.isDark, required this.myUid
+  });
+
+  @override
+  State<_CategoryHistorySheet> createState() => _CategoryHistorySheetState();
+}
+
+class _CategoryHistorySheetState extends State<_CategoryHistorySheet> {
+  late List<DiaryEntry> _localEntries;
+
+  @override
+  void initState() {
+    super.initState();
+    _localEntries = List.from(widget.entries);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text('${widget.catIcon} ${widget.catName} History', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const Divider(height: 30),
+          if (_localEntries.isEmpty) 
+            const Text("No logs for this category.")
+          else Flexible(
+            child: ListView.builder(
+              shrinkWrap: true, 
+              itemCount: _localEntries.length,
+              itemBuilder: (context, i) {
+                final entry = _localEntries[i];
+                return ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text(entry.note),
+                  subtitle: Text(DateFormat('d MMM, yyyy').format(entry.date)),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text('₹${entry.amount.round()}', style: const TextStyle(fontWeight: FontWeight.bold, color: AppColors.orange)),
+                      const SizedBox(width: 8),
+                      IconButton(
+                        icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20),
+                        onPressed: () {
+                          DatabaseService().deletePrivateDiaryEntry(widget.myUid, entry.id);
+                          setState(() {
+                            _localEntries.removeAt(i);
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ManageCategoriesSheet extends StatefulWidget {
+  final String myUid;
+  const _ManageCategoriesSheet({required this.myUid});
+  @override
+  State<_ManageCategoriesSheet> createState() => _ManageCategoriesSheetState();
+}
+
+class _ManageCategoriesSheetState extends State<_ManageCategoriesSheet> {
+  final _nameController = TextEditingController();
+  @override
+  Widget build(BuildContext context) {
+    final isDark = context.watch<AppProvider>().isDark;
+    return Container(
+      padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
+      decoration: BoxDecoration(color: isDark ? AppColors.darkSurface : Colors.white),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text('Manage Sections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 15),
+          Row(
+            children: [
+              Expanded(child: TextField(controller: _nameController, decoration: const InputDecoration(hintText: 'Section Name'))),
+              IconButton(icon: const Icon(Icons.add_circle, color: AppColors.orange), onPressed: () {
+                if (_nameController.text.isNotEmpty) {
+                  DatabaseService().savePrivateCategory(widget.myUid, _nameController.text.trim(), '📦');
+                  _nameController.clear();
+                }
+              }),
+            ],
+          ),
+          const Divider(height: 40),
+          StreamBuilder<QuerySnapshot>(
+            stream: DatabaseService().getPrivateCategoriesStream(widget.myUid),
+            builder: (context, snapshot) {
+              final docs = snapshot.data?.docs ?? [];
+              return Flexible(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: docs.length,
+                  itemBuilder: (context, i) => ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: Text(docs[i]['name']),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _showEditDialog(docs[i].id, docs[i]['name'])),
+                        IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => DatabaseService().deletePrivateCategory(widget.myUid, docs[i].id)),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showEditDialog(String id, String currentName) {
+    final editController = TextEditingController(text: currentName);
+    showDialog(context: context, builder: (context) => AlertDialog(
+      title: const Text('Rename Section'),
+      content: TextField(controller: editController),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        TextButton(onPressed: () {
+          DatabaseService().savePrivateCategory(widget.myUid, editController.text.trim(), '📦', docId: id);
+          Navigator.pop(context);
+        }, child: const Text('Save')),
+      ],
+    ));
+  }
+}
+
+class _AddEntrySheet extends StatefulWidget {
+  final String catName;
+  const _AddEntrySheet({required this.catName});
   @override
   State<_AddEntrySheet> createState() => _AddEntrySheetState();
 }
 
 class _AddEntrySheetState extends State<_AddEntrySheet> {
-  final _noteController = TextEditingController();
-  final _amountController = TextEditingController();
-
-  @override
-  void dispose() {
-    _noteController.dispose();
-    _amountController.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final amount = double.tryParse(_amountController.text) ?? 0;
-    if (amount <= 0) {
-      setState(() {});
-      return;
-    }
-    context.read<AppProvider>().addDiaryEntry(DiaryEntry.create(
-      catId: widget.catId,
-      amount: amount,
-      note: _noteController.text.trim(),
-    ));
-    HapticFeedback.mediumImpact();
-    Navigator.pop(context);
-  }
-
-  void _openNumpad() {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _DiaryNumpad(
-        initial: _amountController.text,
-        onConfirm: (val) => setState(() => _amountController.text = val),
-      ),
-    );
-  }
-
+  final _amount = TextEditingController();
+  final _note = TextEditingController();
   @override
   Widget build(BuildContext context) {
     final isDark = context.watch<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-
     return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20, right: 20, top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
+      padding: EdgeInsets.only(left: 24, right: 24, top: 24, bottom: MediaQuery.of(context).viewInsets.bottom + 24),
+      decoration: BoxDecoration(color: isDark ? AppColors.darkSurface : Colors.white, borderRadius: const BorderRadius.vertical(top: Radius.circular(32))),
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Center(child: Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(
-              color: borderColor, borderRadius: BorderRadius.circular(2),
-            ),
-          )),
-          const SizedBox(height: 16),
-          Text('Add Expense', style: TextStyle(
-            fontFamily: 'Nunito', fontSize: 20,
-            fontWeight: FontWeight.w900, color: textColor,
-          )),
+          Text('Log ${widget.catName}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
           const SizedBox(height: 20),
-
-          // Amount
-          Text('AMOUNT', style: const TextStyle(
-            fontFamily: 'Nunito', fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: AppColors.orange, letterSpacing: 0.5,
-          )),
-          const SizedBox(height: 8),
-          GestureDetector(
-            onTap: _openNumpad,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              decoration: BoxDecoration(
-                color: inputBg, borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: borderColor),
-              ),
-              child: Row(
-                children: [
-                  const Text('₹', style: TextStyle(
-                    fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                    fontSize: 20, color: AppColors.orange,
-                  )),
-                  const SizedBox(width: 8),
-                  Text(
-                    _amountController.text.isEmpty ? 'Enter amount' : _amountController.text,
-                    style: TextStyle(
-                      fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                      color: _amountController.text.isEmpty
-                          ? (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)
-                          : textColor,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Note
-          Text('NOTE (OPTIONAL)', style: const TextStyle(
-            fontFamily: 'Nunito', fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: AppColors.orange, letterSpacing: 0.5,
-          )),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _noteController,
-            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-            decoration: InputDecoration(
-              hintText: 'e.g. Lunch, Auto ride...',
-              hintStyle: TextStyle(
-                color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4),
-              ),
-              filled: true, fillColor: inputBg,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: borderColor),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: borderColor),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: const BorderSide(color: AppColors.orange, width: 1.5),
-              ),
-            ),
-          ),
+          TextField(controller: _amount, keyboardType: TextInputType.number, autofocus: true, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold), decoration: const InputDecoration(prefixText: '₹ ', border: InputBorder.none, hintText: '0')),
+          TextField(controller: _note, decoration: const InputDecoration(hintText: 'Add a note (optional)', border: InputBorder.none)),
           const SizedBox(height: 24),
-
-          GestureDetector(
-            onTap: _save,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: AppColors.orange,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Center(child: Text('Save →', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 16,
-                fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async {
+                final uid = AuthService().currentUser?.uid;
+                final val = double.tryParse(_amount.text) ?? 0;
+                if (uid != null && val > 0) {
+                  await DatabaseService().addPrivateDiaryEntry(uid, _note.text.isEmpty ? widget.catName : _note.text, val, widget.catName, DateTime.now());
+                  HapticFeedback.mediumImpact();
+                  if (mounted) Navigator.pop(context);
+                }
+              },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)), padding: const EdgeInsets.all(18)),
+              child: const Text('Save to Private Vault', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
             ),
           ),
         ],
       ),
     );
   }
-}
-
-// ── ADD CATEGORY SHEET ─────────────────────────────────────────────
-class _AddCatSheet extends StatefulWidget {
-  @override
-  State<_AddCatSheet> createState() => _AddCatSheetState();
-}
-
-class _AddCatSheetState extends State<_AddCatSheet> {
-  final _nameController = TextEditingController();
-  String _selectedIcon = '📦';
-
-  final List<String> _icons = ['📦','🏠','🍽️','🚗','🎬','💰','💊','📚',
-    '🛒','✈️','🎉','💡','🏋️','🐾','👗','🎮'];
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
-    context.read<AppProvider>().addDiaryCategory(
-      DiaryCategory.create(name: name, icon: _selectedIcon),
-    );
-    Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.watch<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20, right: 20, top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(child: Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
-          )),
-          const SizedBox(height: 16),
-          Text('Add Category', style: TextStyle(
-            fontFamily: 'Nunito', fontSize: 20,
-            fontWeight: FontWeight.w900, color: textColor,
-          )),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _nameController,
-            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-            decoration: InputDecoration(
-              labelText: 'Category Name',
-              labelStyle: const TextStyle(color: AppColors.orange),
-              filled: true, fillColor: inputBg,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text('PICK AN ICON', style: const TextStyle(
-            fontFamily: 'Nunito', fontSize: 12,
-            fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5,
-          )),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: _icons.map((icon) {
-              final selected = icon == _selectedIcon;
-              return GestureDetector(
-                onTap: () => setState(() => _selectedIcon = icon),
-                child: Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.orange.withOpacity(0.15) : inputBg,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: selected ? AppColors.orange : borderColor,
-                      width: selected ? 2 : 1.5,
-                    ),
-                  ),
-                  child: Center(child: Text(icon, style: const TextStyle(fontSize: 20))),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          GestureDetector(
-            onTap: _save,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-              child: const Center(child: Text('Add Category →', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 16,
-                fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── EDIT CATEGORY SHEET ────────────────────────────────────────────
-class _EditCatSheet extends StatefulWidget {
-  final DiaryCategory cat;
-  const _EditCatSheet({required this.cat});
-
-  @override
-  State<_EditCatSheet> createState() => _EditCatSheetState();
-}
-
-class _EditCatSheetState extends State<_EditCatSheet> {
-  late TextEditingController _nameController;
-  late String _selectedIcon;
-
-  final List<String> _icons = ['📦','🏠','🍽️','🚗','🎬','💰','💊','📚',
-    '🛒','✈️','🎉','💡','🏋️','🐾','👗','🎮'];
-
-  @override
-  void initState() {
-    super.initState();
-    _nameController = TextEditingController(text: widget.cat.name);
-    _selectedIcon = widget.cat.icon;
-  }
-
-  @override
-  void dispose() {
-    _nameController.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    final name = _nameController.text.trim();
-    if (name.isEmpty) return;
-    widget.cat.name = name;
-    widget.cat.icon = _selectedIcon;
-    context.read<AppProvider>().updateDiaryCategory(widget.cat);
-    Navigator.pop(context);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.watch<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      padding: EdgeInsets.only(
-        left: 20, right: 20, top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Center(child: Container(
-            width: 40, height: 4,
-            decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)),
-          )),
-          const SizedBox(height: 16),
-          Text('Edit Category', style: TextStyle(
-            fontFamily: 'Nunito', fontSize: 20,
-            fontWeight: FontWeight.w900, color: textColor,
-          )),
-          const SizedBox(height: 20),
-          TextField(
-            controller: _nameController,
-            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
-            decoration: InputDecoration(
-              labelText: 'Category Name',
-              labelStyle: const TextStyle(color: AppColors.orange),
-              filled: true, fillColor: inputBg,
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-              enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
-              focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
-            ),
-          ),
-          const SizedBox(height: 16),
-          Text('PICK AN ICON', style: const TextStyle(
-            fontFamily: 'Nunito', fontSize: 12,
-            fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5,
-          )),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8, runSpacing: 8,
-            children: _icons.map((icon) {
-              final selected = icon == _selectedIcon;
-              return GestureDetector(
-                onTap: () => setState(() => _selectedIcon = icon),
-                child: Container(
-                  width: 44, height: 44,
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.orange.withOpacity(0.15) : inputBg,
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: selected ? AppColors.orange : borderColor,
-                      width: selected ? 2 : 1.5,
-                    ),
-                  ),
-                  child: Center(child: Text(icon, style: const TextStyle(fontSize: 20))),
-                ),
-              );
-            }).toList(),
-          ),
-          const SizedBox(height: 24),
-          GestureDetector(
-            onTap: _save,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-              child: const Center(child: Text('Save Changes →', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 16,
-                fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ── DIARY NUMPAD ───────────────────────────────────────────────────
-class _DiaryNumpad extends StatefulWidget {
-  final String initial;
-  final Function(String) onConfirm;
-  const _DiaryNumpad({required this.initial, required this.onConfirm});
-
-  @override
-  State<_DiaryNumpad> createState() => _DiaryNumpadState();
-}
-
-class _DiaryNumpadState extends State<_DiaryNumpad> {
-  late String _value;
-
-  @override
-  void initState() {
-    super.initState();
-    _value = widget.initial.isEmpty ? '0' : widget.initial;
-  }
-
-  void _press(String key) {
-    setState(() {
-      if (key == '.' && _value.contains('.')) return;
-      if (_value == '0' && key != '.') _value = key;
-      else _value += key;
-    });
-  }
-
-  void _delete() {
-    setState(() {
-      _value = _value.length > 1 ? _value.substring(0, _value.length - 1) : '0';
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.read<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final keyBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: const Border(top: BorderSide(color: AppColors.orange, width: 2)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('₹', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 36,
-                fontWeight: FontWeight.w900, color: AppColors.orange,
-              )),
-              const SizedBox(width: 4),
-              Text(_value, style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 48,
-                fontWeight: FontWeight.w900, color: textColor,
-              )),
-            ],
-          ),
-          const SizedBox(height: 16),
-          GridView.count(
-            shrinkWrap: true,
-            crossAxisCount: 3,
-            mainAxisSpacing: 10, crossAxisSpacing: 10,
-            childAspectRatio: 2,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              ...['1','2','3','4','5','6','7','8','9','.','0'].map((k) =>
-                _key(k, keyBg, borderColor, textColor, () => _press(k))
-              ),
-              _key('⌫', keyBg, borderColor, AppColors.error, _delete),
-            ],
-          ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              widget.onConfirm(_value == '0' ? '' : _value);
-              Navigator.pop(context);
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: AppColors.orange,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Center(child: Text('Done ✓', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 17,
-                fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _key(String label, Color bg, Color border, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); onTap(); },
-      child: Container(
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: border, width: 1.5),
-        ),
-        child: Center(child: Text(label, style: TextStyle(
-          fontFamily: 'Nunito', fontSize: 22,
-          fontWeight: FontWeight.w800, color: color,
-        ))),
-      ),
-    );
-  }
-}
-
-// ── PIE CHART PAINTER ──────────────────────────────────────────────
-class _PieSlice {
-  final String label;
-  final double value;
-  final Color color;
-  _PieSlice({required this.label, required this.value, required this.color});
-}
-
-class _PiePainter extends CustomPainter {
-  final List<_PieSlice> slices;
-  final double total;
-  final String centerText;
-  final bool isDark;
-  final double size;
-
-  _PiePainter({
-    required this.slices,
-    required this.total,
-    required this.centerText,
-    required this.isDark,
-    this.size = 120,
-  });
-
-  @override
-  void paint(Canvas canvas, Size canvasSize) {
-    final cx = canvasSize.width / 2;
-    final cy = canvasSize.height / 2;
-    final r = math.min(cx, cy) - 4;
-
-    if (slices.isEmpty || total == 0) {
-      final paint = Paint()
-        ..color = isDark ? AppColors.darkSurface2 : const Color(0xFFFDE8CC)
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(cx, cy), r, paint);
-      final holePaint = Paint()
-        ..color = isDark ? AppColors.darkSurface : Colors.white
-        ..style = PaintingStyle.fill;
-      canvas.drawCircle(Offset(cx, cy), r * 0.52, holePaint);
-      return;
-    }
-
-    double startAngle = -math.pi / 2;
-    for (final slice in slices) {
-      final sweep = (slice.value / total) * math.pi * 2;
-      final paint = Paint()
-        ..color = slice.color
-        ..style = PaintingStyle.fill;
-      canvas.drawArc(
-        Rect.fromCircle(center: Offset(cx, cy), radius: r),
-        startAngle, sweep, true, paint,
-      );
-      final strokePaint = Paint()
-        ..color = Colors.white
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2;
-      canvas.drawArc(
-        Rect.fromCircle(center: Offset(cx, cy), radius: r),
-        startAngle, sweep, true, strokePaint,
-      );
-      startAngle += sweep;
-    }
-
-    // Hole
-    final holePaint = Paint()
-      ..color = isDark ? AppColors.darkSurface : Colors.white
-      ..style = PaintingStyle.fill;
-    canvas.drawCircle(Offset(cx, cy), r * 0.52, holePaint);
-
-    // Center text
-    if (centerText.isNotEmpty) {
-      final tp = TextPainter(
-        text: TextSpan(
-          text: centerText,
-          style: TextStyle(
-            fontFamily: 'Nunito',
-            fontSize: size < 130 ? 13 : 16,
-            fontWeight: FontWeight.w900,
-            color: AppColors.orange,
-          ),
-        ),
-        textDirection: ui.TextDirection.ltr,
-        textAlign: TextAlign.center,
-      );
-      tp.layout();
-      tp.paint(canvas, Offset(cx - tp.width / 2, cy - tp.height / 2));
-    }
-  }
-
-  @override
-  bool shouldRepaint(_PiePainter old) => true;
 }

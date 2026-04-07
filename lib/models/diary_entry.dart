@@ -40,9 +40,10 @@ class DiaryCategory {
 class DiaryEntry {
   final String id;
   final String catId;
-  double amount;
-  String note;
-  DateTime date;
+  final String note;
+  final double amount;
+  final DateTime date;
+  final bool deleted;
 
   DiaryEntry({
     required this.id,
@@ -50,6 +51,7 @@ class DiaryEntry {
     required this.amount,
     required this.note,
     required this.date,
+    this.deleted = false,
   });
 
   factory DiaryEntry.create({
