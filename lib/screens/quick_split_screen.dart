@@ -1,9 +1,29 @@
+import 'dart:math' as math;
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../utils/constants.dart';
 
+// --- MODELS ---
+class SplitPerson {
+  String id;
+  String name;
+  double amountPaid;
+
+  SplitPerson({required this.id, required this.name, this.amountPaid = 0.0});
+}
+
+class Settlement {
+  final String from;
+  final String to;
+  final double amount;
+
+  Settlement(this.from, this.to, this.amount);
+}
+
+// --- SCREEN ---
 class QuickSplitScreen extends StatefulWidget {
   const QuickSplitScreen({super.key});
 
@@ -11,125 +31,340 @@ class QuickSplitScreen extends StatefulWidget {
   State<QuickSplitScreen> createState() => _QuickSplitScreenState();
 }
 
-class _QuickSplitScreenState extends State<QuickSplitScreen> {
-  int _step = 1;
-  String _numStr = '';
-  List<_Person> _people = [];
-  final Map<int, TextEditingController> _nameControllers = {};
-  final Map<int, TextEditingController> _spendControllers = {};
+class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerProviderStateMixin {
+  // State: 0 = Initial (Ask Count), 1 = Splitting (Show List), 2 = Results (Show Overlay)
+  int _currentStep = 0; 
+  
+  final TextEditingController _countController = TextEditingController();
+  List<SplitPerson> _people = [];
+
+  // Result State
+  double _displayTotal = 0.0;
+  double _displayFairShare = 0.0;
+  List<Settlement> _finalSettlements = [];
+
+  @override
+  void initState() {
+    super.initState();
+    // Trigger the entry animation for Part 1 after a micro-delay
+    Future.delayed(const Duration(milliseconds: 100), () {
+      if (mounted) setState(() => _currentStep = 0);
+    });
+  }
 
   @override
   void dispose() {
-    for (final c in _nameControllers.values) c.dispose();
-    for (final c in _spendControllers.values) c.dispose();
+    _countController.dispose();
     super.dispose();
   }
 
-  void _numPress(String key) {
-    setState(() {
-      if (_numStr.length >= 2) return;
-      if (key == '0' && _numStr.isEmpty) return;
-      _numStr += key;
-    });
-  }
-
-  void _numDelete() {
-    setState(() {
-      if (_numStr.isNotEmpty) _numStr = _numStr.substring(0, _numStr.length - 1);
-    });
-  }
-
-  void _confirmPeople() {
-    final n = int.tryParse(_numStr) ?? 0;
-    if (n < 2) { _toast('Enter at least 2 people!'); return; }
-    if (n > 20) { _toast('Max 20 people!'); return; }
-    setState(() {
-      _people = List.generate(n, (i) => _Person(name: 'Person ${i + 1}', spend: 0));
-      _nameControllers.clear();
-      _spendControllers.clear();
-      _step = 2;
-    });
-  }
-
-  void _calculate() {
-    for (int i = 0; i < _people.length; i++) {
-      final nameCtrl = _nameControllers[i];
-      if (nameCtrl != null && nameCtrl.text.trim().isNotEmpty) {
-        _people[i].name = nameCtrl.text.trim();
-      }
-      final spendCtrl = _spendControllers[i];
-      _people[i].spend = double.tryParse(spendCtrl?.text ?? '') ?? 0;
+  // --- ALGORITHM ---
+  void _calculateSplit() {
+    FocusScope.of(context).unfocus(); 
+    
+    final total = _people.fold(0.0, (sum, p) => sum + p.amountPaid);
+    final fairShare = _people.isEmpty ? 0.0 : total / _people.length;
+    
+    if (total == 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter amounts greater than ₹0.')),
+      );
+      return;
     }
-    setState(() => _step = 3);
-  }
 
-  void _reset() {
+    HapticFeedback.mediumImpact();
+
+    List<Map<String, dynamic>> balances = _people.map((p) => {
+      'name': p.name.isEmpty ? 'Unknown' : p.name,
+      'balance': p.amountPaid - fairShare
+    }).toList();
+
+    List<Map<String, dynamic>> debtors = balances.where((b) => (b['balance'] as double) < -0.01).toList();
+    List<Map<String, dynamic>> creditors = balances.where((b) => (b['balance'] as double) > 0.01).toList();
+
+    debtors.sort((a, b) => (a['balance'] as double).compareTo(b['balance'] as double));
+    creditors.sort((a, b) => (b['balance'] as double).compareTo(a['balance'] as double));
+
+    List<Settlement> settlements = [];
+    int i = 0, j = 0;
+
+    while (i < debtors.length && j < creditors.length) {
+      double debt = -(debtors[i]['balance'] as double);
+      double credit = creditors[j]['balance'] as double;
+      double amount = math.min(debt, credit);
+      
+      settlements.add(Settlement(debtors[i]['name'], creditors[j]['name'], amount));
+
+      debtors[i]['balance'] = (debtors[i]['balance'] as double) + amount;
+      creditors[j]['balance'] = (creditors[j]['balance'] as double) - amount;
+
+      if ((debtors[i]['balance'] as double).abs() < 0.01) i++;
+      if ((creditors[j]['balance'] as double).abs() < 0.01) j++;
+    }
+
     setState(() {
-      _step = 1;
-      _numStr = '';
-      _people = [];
-      _nameControllers.clear();
-      _spendControllers.clear();
+      _displayTotal = total;
+      _displayFairShare = fairShare;
+      _finalSettlements = settlements;
+      _currentStep = 2; // Trigger Results Overlay
     });
   }
 
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
-      backgroundColor: AppColors.orange,
-      duration: const Duration(seconds: 2),
-      behavior: SnackBarBehavior.floating,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-    ));
+  void _generatePeopleList(String value) {
+    int count = int.tryParse(value) ?? 0;
+    if (count >= 2) {
+      HapticFeedback.lightImpact();
+      FocusScope.of(context).unfocus();
+      setState(() {
+        _people = List.generate(count, (i) => SplitPerson(id: i.toString(), name: 'Person ${i + 1}'));
+        _currentStep = 1; // Trigger sliding in Parts 2 & 3
+      });
+    }
+  }
+
+  void _resetFlow() {
+    HapticFeedback.lightImpact();
+    setState(() {
+      _currentStep = 0;
+      _people.clear();
+      _countController.clear();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final isDark = context.watch<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkBg : AppColors.cream;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
 
     return Scaffold(
-      backgroundColor: bg,
-      body: SafeArea(
-        child: Column(
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFFF97316), Color(0xFFEA580C)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                ),
-              ),
-              child: Row(
+      backgroundColor: isDark ? AppColors.darkBg : AppColors.cream,
+      body: GestureDetector(
+        onTap: () => FocusScope.of(context).unfocus(),
+        child: SafeArea(
+          child: Stack(
+            children: [
+              // BASE LAYER: The Input Flow (Parts 1, 2, 3)
+              Column(
                 children: [
-                  GestureDetector(
-                    onTap: () => Navigator.pop(context),
-                    child: const Icon(Icons.arrow_back, color: Colors.white),
+                  _buildHeader(context),
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 20),
+                          // PART 1: The Question Box
+                          _buildPart1Question(isDark),
+                          
+                          const SizedBox(height: 24),
+                          
+                          // PART 2: The Sliding List of Avatars
+                          Expanded(
+                            child: AnimatedOpacity(
+                              opacity: _currentStep >= 1 ? 1.0 : 0.0,
+                              duration: const Duration(milliseconds: 500),
+                              child: AnimatedSlide(
+                                offset: _currentStep >= 1 ? Offset.zero : const Offset(0, 0.5),
+                                duration: const Duration(milliseconds: 600),
+                                curve: Curves.easeOutCubic,
+                                child: _currentStep >= 1 
+                                  ? ListView.builder(
+                                      itemCount: _people.length,
+                                      padding: const EdgeInsets.only(bottom: 20),
+                                      itemBuilder: (context, index) => _buildPersonCard(_people[index], isDark, index),
+                                    )
+                                  : const SizedBox.shrink(),
+                              ),
+                            ),
+                          ),
+                          
+                          // PART 3: The Sliding Calculate Button
+                          AnimatedOpacity(
+                            opacity: _currentStep >= 1 ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 600),
+                            child: AnimatedSlide(
+                              offset: _currentStep >= 1 ? Offset.zero : const Offset(0, 1.0),
+                              duration: const Duration(milliseconds: 700),
+                              curve: Curves.easeOutBack,
+                              child: _currentStep >= 1
+                                  ? Padding(
+                                      padding: const EdgeInsets.only(bottom: 20, top: 10),
+                                      child: SizedBox(
+                                        width: double.infinity,
+                                        height: 60,
+                                        child: ElevatedButton.icon(
+                                          onPressed: _calculateSplit,
+                                          icon: const Icon(Icons.calculate_rounded, color: Colors.white),
+                                          label: const Text('Calculate Split', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: AppColors.orange,
+                                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                            elevation: 8,
+                                            shadowColor: AppColors.orange.withOpacity(0.5),
+                                          ),
+                                        ),
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
-                  const SizedBox(width: 12),
-                  const Text('⚡ Quick Split', style: TextStyle(
-                    fontFamily: 'Nunito', fontSize: 22,
-                    fontWeight: FontWeight.w900, color: Colors.white,
-                  )),
-                  const Spacer(),
-                  // Step indicator
-                  Text('Step $_step/3', style: const TextStyle(
-                    fontSize: 12, color: Colors.white60,
-                  )),
                 ],
               ),
-            ),
 
+              // OVERLAY LAYER: The Beautiful Read-Only Results
+              if (_currentStep == 2)
+                _buildResultsOverlay(isDark),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.orange, size: 20), onPressed: () => Navigator.pop(context)),
+          const Text('Advanced Split', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.orange)),
+          IconButton(
+            icon: const Icon(Icons.refresh, color: AppColors.orange, size: 22), 
+            onPressed: _resetFlow,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- PART 1 ---
+  Widget _buildPart1Question(bool isDark) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOutCubic,
+      width: double.infinity,
+      padding: const EdgeInsets.all(24),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(colors: [AppColors.orange, Color(0xFFFB923C)]),
+        borderRadius: BorderRadius.circular(32),
+        boxShadow: [BoxShadow(color: AppColors.orange.withOpacity(0.4), blurRadius: 20, offset: const Offset(0, 10))],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            _currentStep == 0 ? 'START SPLITTING' : 'SPLITTING AMONG', 
+            style: TextStyle(color: Colors.white.withOpacity(0.9), fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.5)
+          ),
+          const SizedBox(height: 16),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Expanded(
+                child: _currentStep == 0 
+                  ? TextField(
+                      controller: _countController,
+                      keyboardType: TextInputType.number,
+                      autofocus: true,
+                      cursorColor: Colors.white,
+                      cursorHeight: 40, 
+                      cursorWidth: 3,
+                      style: const TextStyle(color: Colors.white, fontSize: 42, fontWeight: FontWeight.w900),
+                      decoration: InputDecoration(
+                        hintText: 'How many people?',
+                        hintStyle: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 24, fontWeight: FontWeight.w600),
+                        border: InputBorder.none,
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                      onSubmitted: _generatePeopleList,
+                      onChanged: (val) {
+                         if ((int.tryParse(val) ?? 0) >= 2 && val.length > 1) {
+                           _generatePeopleList(val); // Auto-advance if logic suits
+                         }
+                      },
+                    )
+                  : Text('${_people.length} People', style: const TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w900)),
+              ),
+              if (_currentStep == 0)
+                IconButton(
+                  onPressed: () => _generatePeopleList(_countController.text),
+                  icon: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), shape: BoxShape.circle),
+                    child: const Icon(Icons.arrow_forward_rounded, color: Colors.white),
+                  ),
+                )
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- PART 2 ---
+  Widget _buildPersonCard(SplitPerson person, bool isDark, int index) {
+    final avatarColors = [Colors.blue, Colors.green, Colors.purple, Colors.teal, Colors.pink];
+    final avatarColor = avatarColors[index % avatarColors.length];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            CircleAvatar(
+              radius: 22,
+              backgroundColor: avatarColor.withOpacity(0.15),
+              child: Icon(Icons.person, color: avatarColor, size: 20),
+            ),
+            const SizedBox(width: 16),
             Expanded(
-              child: _step == 1
-                  ? _buildStep1(isDark, textColor)
-                  : _step == 2
-                      ? _buildStep2(isDark, textColor)
-                      : _buildStep3(isDark, textColor),
+              child: TextFormField(
+                initialValue: person.name,
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: isDark ? Colors.white : Colors.black87),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                  hintText: 'Enter name...',
+                  hintStyle: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.normal)
+                ),
+                onChanged: (val) => person.name = val,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 110,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.darkBg : Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: TextFormField(
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                textAlign: TextAlign.right,
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                  prefixText: '₹ ',
+                  prefixStyle: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.bold, fontSize: 16),
+                  hintText: '0',
+                  hintStyle: TextStyle(color: AppColors.orange.withOpacity(0.4))
+                ),
+                onChanged: (val) => person.amountPaid = double.tryParse(val.replaceAll('₹', '').trim()) ?? 0.0,
+              ),
             ),
           ],
         ),
@@ -137,558 +372,176 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> {
     );
   }
 
-  // ── STEP 1: How many people ─────────────────────────────────────
-  Widget _buildStep1(bool isDark, Color textColor) {
-    final keyBg = isDark ? AppColors.darkSurface2 : Colors.white;
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(24),
-      child: Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360),
-          child: Column(
-            children: [
-              const SizedBox(height: 20),
-              Text('How many people?', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 22,
-                fontWeight: FontWeight.w900, color: textColor,
-              )),
-              const SizedBox(height: 8),
-              Text('Max 20 people', style: TextStyle(
-                fontSize: 13,
-                color: isDark ? AppColors.darkMuted : AppColors.muted,
-              )),
-              const SizedBox(height: 32),
-
-              // Display
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 20),
-                decoration: BoxDecoration(
-                  color: isDark ? AppColors.darkSurface : Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: AppColors.orange, width: 2),
-                ),
-                child: Text(
-                  _numStr.isEmpty ? '_' : _numStr,
-                  style: TextStyle(
-                    fontFamily: 'Nunito', fontSize: 56,
-                    fontWeight: FontWeight.w900,
-                    color: _numStr.isEmpty ? AppColors.muted : AppColors.orange,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 32),
-
-              // Numpad
-              GridView.count(
-                shrinkWrap: true,
-                crossAxisCount: 3,
-                mainAxisSpacing: 12, crossAxisSpacing: 12,
-                childAspectRatio: 1.8,
-                physics: const NeverScrollableScrollPhysics(),
-                children: [
-                  ...['1','2','3','4','5','6','7','8','9'].map((k) =>
-                    _numKey(k, keyBg, borderColor, textColor, () => _numPress(k))
-                  ),
-                  _numKey('', keyBg, borderColor, textColor, () {}),
-                  _numKey('0', keyBg, borderColor, textColor, () => _numPress('0')),
-                  _numKey('⌫', keyBg, borderColor, AppColors.error, _numDelete),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              GestureDetector(
-                onTap: _confirmPeople,
+  // --- THE RESULTS OVERLAY ---
+  Widget _buildResultsOverlay(bool isDark) {
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(begin: 0, end: 1),
+      duration: const Duration(milliseconds: 400),
+      builder: (context, opacity, child) {
+        return Stack(
+          children: [
+            // Glassmorphism Blur Background
+            BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 10 * opacity, sigmaY: 10 * opacity),
+              child: Container(color: Colors.black.withOpacity(0.4 * opacity)),
+            ),
+            
+            // Sliding Up Results Card
+            Align(
+              alignment: Alignment.bottomCenter,
+              child: AnimatedSlide(
+                offset: _currentStep == 2 ? Offset.zero : const Offset(0, 1),
+                duration: const Duration(milliseconds: 600),
+                curve: Curves.easeOutCubic,
                 child: Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.85),
+                  padding: const EdgeInsets.all(24),
                   decoration: BoxDecoration(
-                    color: AppColors.orange,
-                    borderRadius: BorderRadius.circular(14),
+                    color: isDark ? AppColors.darkBg : AppColors.cream,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+                    boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 30, offset: const Offset(0, -10))],
                   ),
-                  child: const Center(child: Text('Next →', style: TextStyle(
-                    fontFamily: 'Nunito', fontSize: 17,
-                    fontWeight: FontWeight.w800, color: Colors.white,
-                  ))),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _numKey(String label, Color bg, Color border, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); onTap(); },
-      child: Container(
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: border, width: 1.5),
-        ),
-        child: Center(child: Text(label, style: TextStyle(
-          fontFamily: 'Nunito', fontSize: 22,
-          fontWeight: FontWeight.w800, color: color,
-        ))),
-      ),
-    );
-  }
-
-  // ── STEP 2: Names & amounts ─────────────────────────────────────
-  Widget _buildStep2(bool isDark, Color textColor) {
-    final borderColor = isDark ? AppColors.darkBorder : const Color(0xFFE8C9A0);
-    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-            itemCount: _people.length,
-            itemBuilder: (context, i) {
-              final nameCtrl = _nameControllers.putIfAbsent(
-                i, () => TextEditingController(text: _people[i].name));
-              final spendCtrl = _spendControllers.putIfAbsent(
-                i, () => TextEditingController());
-
-              return Container(
-                margin: const EdgeInsets.only(bottom: 10),
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
-                decoration: BoxDecoration(
-                  border: Border(bottom: BorderSide(color: borderColor)),
-                ),
-                child: Row(
-                  children: [
-                    // Avatar
-                    Container(
-                      width: 36, height: 36,
-                      decoration: BoxDecoration(
-                        color: AppConstants.getAvatarColor(i),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Center(child: Text('${i + 1}', style: const TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                        color: Colors.white, fontSize: 14,
-                      ))),
-                    ),
-                    const SizedBox(width: 10),
-
-                    // Name input
-                    Expanded(
-                      flex: 2,
-                      child: TextField(
-                        controller: nameCtrl,
-                        style: TextStyle(
-                          fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                          color: textColor, fontSize: 14,
-                        ),
-                        decoration: InputDecoration(
-                          hintText: 'Name',
-                          hintStyle: TextStyle(
-                            color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4),
-                          ),
-                          filled: true, fillColor: inputBg,
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: borderColor),
-                          ),
-                          enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: BorderSide(color: borderColor),
-                          ),
-                          focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10),
-                            borderSide: const BorderSide(color: AppColors.orange),
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-
-                    // Spend amount
-                    Expanded(
-                      flex: 2,
-                      child: GestureDetector(
-                        onTap: () => _openSpendNumpad(i, spendCtrl, nameCtrl.text),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: inputBg,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(color: borderColor),
-                          ),
-                          child: Row(
-                            children: [
-                              const Text('₹', style: TextStyle(
-                                fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                                color: AppColors.orange, fontSize: 14,
-                              )),
-                              const SizedBox(width: 4),
-                              Text(
-                                spendCtrl.text.isEmpty ? '0' : spendCtrl.text,
-                                style: TextStyle(
-                                  fontFamily: 'Nunito', fontWeight: FontWeight.w700,
-                                  fontSize: 14,
-                                  color: spendCtrl.text.isEmpty
-                                      ? (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.5)
-                                      : textColor,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-
-        // Bottom buttons
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: Row(
-            children: [
-              Expanded(
-                child: GestureDetector(
-                  onTap: _reset,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      color: isDark ? AppColors.darkSurface2 : Colors.white,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: isDark ? AppColors.darkBorder : AppColors.border,
-                      ),
-                    ),
-                    child: Center(child: Text('← Back', style: TextStyle(
-                      fontFamily: 'Nunito', fontSize: 15,
-                      fontWeight: FontWeight.w800, color: textColor,
-                    ))),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: GestureDetector(
-                  onTap: _calculate,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    decoration: BoxDecoration(
-                      color: AppColors.orange,
-                      borderRadius: BorderRadius.circular(14),
-                    ),
-                    child: const Center(child: Text('Calculate →', style: TextStyle(
-                      fontFamily: 'Nunito', fontSize: 15,
-                      fontWeight: FontWeight.w800, color: Colors.white,
-                    ))),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  void _openSpendNumpad(int i, TextEditingController ctrl, String name) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (_) => _SpendNumpad(
-        initial: ctrl.text,
-        name: name.isEmpty ? 'Person ${i + 1}' : name,
-        onConfirm: (val) => setState(() => ctrl.text = val),
-      ),
-    );
-  }
-
-  // ── STEP 3: Results ─────────────────────────────────────────────
-  Widget _buildStep3(bool isDark, Color textColor) {
-    final total = _people.fold(0.0, (sum, p) => sum + p.spend);
-    final fairShare = _people.isEmpty ? 0.0 : total / _people.length;
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-
-    // Calculate transactions
-    final balances = _people.map((p) => p.spend - fairShare).toList();
-    final transactions = <Map<String, dynamic>>[];
-    final debtors = <Map<String, dynamic>>[];
-    final creditors = <Map<String, dynamic>>[];
-
-    for (int i = 0; i < _people.length; i++) {
-      if (balances[i] < -0.01) debtors.add({'name': _people[i].name, 'amt': -balances[i]});
-      if (balances[i] > 0.01) creditors.add({'name': _people[i].name, 'amt': balances[i]});
-    }
-
-    int i = 0, j = 0;
-    while (i < debtors.length && j < creditors.length) {
-      final pay = (debtors[i]['amt'] as double) < (creditors[j]['amt'] as double)
-          ? debtors[i]['amt'] as double
-          : creditors[j]['amt'] as double;
-      if (pay > 0.01) {
-        transactions.add({
-          'from': debtors[i]['name'],
-          'to': creditors[j]['name'],
-          'amount': pay.round(),
-        });
-      }
-      debtors[i]['amt'] = (debtors[i]['amt'] as double) - pay;
-      creditors[j]['amt'] = (creditors[j]['amt'] as double) - pay;
-      if ((debtors[i]['amt'] as double) < 0.01) i++;
-      if ((creditors[j]['amt'] as double) < 0.01) j++;
-    }
-
-    return Column(
-      children: [
-        Expanded(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-            children: [
-              // Summary card
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(
-                    colors: [Color(0xFFF97316), Color(0xFFEA580C)],
-                  ),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
-                  children: [
-                    _summaryItem('Total Spent', '₹${total.round()}'),
-                    _summaryItem('People', '${_people.length}'),
-                    _summaryItem('Fair Share', '₹${fairShare.round()}'),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-
-              if (transactions.isEmpty) ...[
-                Center(child: Column(
-                  children: [
-                    const Text('🎉', style: TextStyle(fontSize: 40)),
-                    const SizedBox(height: 12),
-                    Text('Everyone paid equally!', style: TextStyle(
-                      fontFamily: 'Nunito', fontSize: 16,
-                      fontWeight: FontWeight.w800, color: textColor,
-                    )),
-                  ],
-                )),
-              ] else ...[
-                Text('WHO PAYS WHOM', style: const TextStyle(
-                  fontFamily: 'Nunito', fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.orange, letterSpacing: 1,
-                )),
-                const SizedBox(height: 12),
-                ...transactions.map((t) => Container(
-                  padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 4),
-                  decoration: BoxDecoration(
-                    border: Border(bottom: BorderSide(color: borderColor)),
-                  ),
-                  child: Row(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(t['from'], style: TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                        fontSize: 15, color: textColor,
-                      )),
-                      const SizedBox(width: 8),
-                      const Icon(Icons.arrow_forward, color: AppColors.orange, size: 16),
-                      const SizedBox(width: 8),
-                      Expanded(child: Text(t['to'], style: TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w800,
-                        fontSize: 15, color: textColor,
-                      ))),
-                      Text('₹${t['amount']}', style: const TextStyle(
-                        fontFamily: 'Nunito', fontWeight: FontWeight.w900,
-                        fontSize: 18, color: AppColors.orange,
-                      )),
+                      // Overlay Header with Close Button
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Split Breakdown', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+                          IconButton(
+                            onPressed: () => setState(() => _currentStep = 1), // Close overlay, go back to edit
+                            icon: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(color: Colors.grey.withOpacity(0.2), shape: BoxShape.circle),
+                              child: const Icon(Icons.close, size: 20),
+                            ),
+                          )
+                        ],
+                      ),
+                      const SizedBox(height: 24),
+                      
+                      // Result Hero Stats
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(color: AppColors.orange.withOpacity(0.15), borderRadius: BorderRadius.circular(24)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('TOTAL SPENT', style: TextStyle(color: AppColors.orange, fontSize: 10, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 4),
+                                  Text('₹${_displayTotal.round()}', style: const TextStyle(color: AppColors.orange, fontSize: 24, fontWeight: FontWeight.w900)),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(20),
+                              decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(24)),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text('FAIR SHARE', style: TextStyle(color: Colors.white.withOpacity(0.8), fontSize: 10, fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 4),
+                                  Text('₹${_displayFairShare.round()}', style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w900)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      
+                      const SizedBox(height: 32),
+                      Text('HOW TO SETTLE UP', style: TextStyle(color: Colors.grey.shade600, fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 1)),
+                      const SizedBox(height: 16),
+
+                      // Scrollable list of settlements inside the bottom sheet
+                      Flexible(
+                        child: SingleChildScrollView(
+                          child: Column(
+                            children: _finalSettlements.map((s) => Container(
+                              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
+                              margin: const EdgeInsets.only(bottom: 12),
+                              decoration: BoxDecoration(
+                                color: isDark ? AppColors.darkSurface : Colors.white,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))],
+                              ),
+                              child: Row(
+                                children: [
+                                  Expanded(flex: 3, child: Text(s.from, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isDark ? Colors.white : Colors.black87), overflow: TextOverflow.ellipsis)),
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 12),
+                                    child: Icon(Icons.arrow_forward_rounded, color: AppColors.orange, size: 20),
+                                  ),
+                                  Expanded(flex: 3, child: Text(s.to, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: isDark ? Colors.white : Colors.black87), textAlign: TextAlign.right, overflow: TextOverflow.ellipsis)),
+                                  const SizedBox(width: 16),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                    decoration: BoxDecoration(color: AppColors.orange.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                                    child: Text('₹${s.amount.round()}', style: const TextStyle(fontWeight: FontWeight.w900, color: AppColors.orange)),
+                                  ),
+                                ],
+                              ),
+                            )).toList(),
+                          ),
+                        ),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 60,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _shareSplit(_finalSettlements),
+                          icon: const Icon(Icons.share, color: Colors.white),
+                          label: const Text('Share Breakdown', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.orange,
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            elevation: 8,
+                            shadowColor: AppColors.orange.withOpacity(0.5),
+                          ),
+                        ),
+                      )
                     ],
                   ),
-                )),
-              ],
-            ],
-          ),
-        ),
-
-        // Split Again button
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
-          child: GestureDetector(
-            onTap: _reset,
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: AppColors.orange,
-                borderRadius: BorderRadius.circular(14),
+                ),
               ),
-              child: const Center(child: Text('Split Again 🔄', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 16,
-                fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
             ),
-          ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _shareSplit(List<Settlement> settlements) {
+    HapticFeedback.mediumImpact();
+    String shareText = '🧾 *Splitsathi Advanced Split*\nTotal Spent: ₹${_displayTotal.round()}\nFair Share: ₹${_displayFairShare.round()} / person\n\n*How to Settle Up:*\n';
+    for (var s in settlements) {
+      shareText += '💸 ${s.from} owes ${s.to} ₹${s.amount.round()}\n';
+    }
+    Clipboard.setData(ClipboardData(text: shareText));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: const Row(
+          children: [
+            Icon(Icons.check_circle, color: Colors.white),
+            SizedBox(width: 12),
+            Text('Settlement plan copied!', style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
         ),
-      ],
-    );
-  }
-
-  Widget _summaryItem(String label, String value) {
-    return Column(
-      children: [
-        Text(label, style: const TextStyle(
-          fontSize: 10, color: Colors.white60,
-          letterSpacing: 0.5, fontWeight: FontWeight.w700,
-        )),
-        const SizedBox(height: 4),
-        Text(value, style: const TextStyle(
-          fontFamily: 'Nunito', fontSize: 20,
-          fontWeight: FontWeight.w900, color: Colors.white,
-        )),
-      ],
-    );
-  }
-}
-
-class _Person {
-  String name;
-  double spend;
-  _Person({required this.name, required this.spend});
-}
-
-// ── SPEND NUMPAD ───────────────────────────────────────────────────
-class _SpendNumpad extends StatefulWidget {
-  final String initial;
-  final String name;
-  final Function(String) onConfirm;
-  const _SpendNumpad({required this.initial, required this.name, required this.onConfirm});
-
-  @override
-  State<_SpendNumpad> createState() => _SpendNumpadState();
-}
-
-class _SpendNumpadState extends State<_SpendNumpad> {
-  late String _value;
-
-  @override
-  void initState() {
-    super.initState();
-    _value = widget.initial.isEmpty ? '0' : widget.initial;
-  }
-
-  void _press(String key) {
-    setState(() {
-      if (key == '.' && _value.contains('.')) return;
-      if (_value == '0' && key != '.') _value = key;
-      else _value += key;
-    });
-  }
-
-  void _delete() {
-    setState(() {
-      _value = _value.length > 1 ? _value.substring(0, _value.length - 1) : '0';
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = context.read<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkSurface : Colors.white;
-    final keyBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
-    final borderColor = isDark ? AppColors.darkBorder : AppColors.border;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-
-    return Container(
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-        border: const Border(top: BorderSide(color: AppColors.orange, width: 2)),
-      ),
-      padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text("${widget.name}'s spend", style: TextStyle(
-            fontSize: 13,
-            color: isDark ? AppColors.darkMuted : AppColors.muted,
-          )),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text('₹', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 36,
-                fontWeight: FontWeight.w900, color: AppColors.orange,
-              )),
-              const SizedBox(width: 4),
-              Text(_value, style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 48,
-                fontWeight: FontWeight.w900, color: textColor,
-              )),
-            ],
-          ),
-          const SizedBox(height: 16),
-          GridView.count(
-            shrinkWrap: true,
-            crossAxisCount: 3,
-            mainAxisSpacing: 10, crossAxisSpacing: 10,
-            childAspectRatio: 2,
-            physics: const NeverScrollableScrollPhysics(),
-            children: [
-              ...['1','2','3','4','5','6','7','8','9','.','0'].map((k) =>
-                _key(k, keyBg, borderColor, textColor, () => _press(k))
-              ),
-              _key('⌫', keyBg, borderColor, AppColors.error, _delete),
-            ],
-          ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: () {
-              widget.onConfirm(_value == '0' ? '' : _value);
-              Navigator.pop(context);
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: AppColors.orange,
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Center(child: Text('Done ✓', style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 17,
-                fontWeight: FontWeight.w800, color: Colors.white,
-              ))),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _key(String label, Color bg, Color border, Color color, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: () { HapticFeedback.selectionClick(); onTap(); },
-      child: Container(
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: border, width: 1.5),
-        ),
-        child: Center(child: Text(label, style: TextStyle(
-          fontFamily: 'Nunito', fontSize: 22,
-          fontWeight: FontWeight.w800, color: color,
-        ))),
+        backgroundColor: Colors.green.shade600,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        margin: const EdgeInsets.all(20),
       ),
     );
   }
