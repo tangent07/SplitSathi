@@ -38,6 +38,8 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  path_provider: ^2.1.2   # Lets us save the file temporarily
+  share_plus: ^7.2.1      # Opens the native iOS/Android share sheet
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.3.6
