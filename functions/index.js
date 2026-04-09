@@ -77,11 +77,10 @@ exports.sendGroupExpenseNotification = functions.firestore
 
       const groupName = groupDoc.data().name;
       const members = groupDoc.data().members || [];
-      const creatorId = groupDoc.data().createdBy; // <-- WE GRAB THE CREATOR'S ID!
+      const creatorId = groupDoc.data().createdBy; 
 
       console.log(`New expense in ${groupName} paid by ${paidBy}`);
 
-      // Filter out the person who paid. (We DO NOT filter out "You" anymore!)
       const usersToNotify = members.filter(member => member !== paidBy);
 
       if (usersToNotify.length === 0) {
@@ -92,13 +91,11 @@ exports.sendGroupExpenseNotification = functions.firestore
       const tokens = [];
       for (const memberName of usersToNotify) {
         if (memberName === "You") {
-          // If the member is "You", look up the group creator's exact FCM Token!
           const creatorDoc = await admin.firestore().collection("users").doc(creatorId).get();
           if (creatorDoc.exists && creatorDoc.data().fcmToken) {
             tokens.push(creatorDoc.data().fcmToken);
           }
         } else {
-          // Otherwise, look them up by their normal name
           const userQuery = await admin.firestore()
             .collection("users")
             .where("name", "==", memberName)
@@ -122,7 +119,7 @@ exports.sendGroupExpenseNotification = functions.firestore
           title: `${groupName} 🧾`,
           body: `${paidBy} added a ₹${amount} expense.`,
         },
-        tokens: tokens, // Multicast array
+        tokens: tokens, 
       };
 
       const response = await admin.messaging().sendEachForMulticast(message);
@@ -134,3 +131,59 @@ exports.sendGroupExpenseNotification = functions.firestore
 
     return null;
   });
+
+// ─────────────────────────────────────────────────────────────
+// 3. SEND EMAIL OTP FOR PROFILE VERIFICATION
+// ─────────────────────────────────────────────────────────────
+exports.sendEmailOtp = functions.https.onCall(async (data, context) => {
+  // Security check: Make sure the user is logged in
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'You must be logged in.');
+  }
+
+  const newEmail = data.email;
+  const uid = context.auth.uid;
+
+  if (!newEmail) {
+    throw new functions.https.HttpsError('invalid-argument', 'Email is required.');
+  }
+
+  // Generate a random 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+  try {
+    // Save the OTP securely in Firestore
+    await admin.firestore().collection('otp_codes').doc(uid).set({
+      code: otp,
+      email: newEmail,
+      createdAt: admin.firestore.FieldValue.serverTimestamp()
+    });
+
+    // --- FIX: WE REQUIRE AND SETUP NODEMAILER HERE TO PREVENT DEPLOYMENT TIMEOUTS ---
+    const nodemailer = require("nodemailer");
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: 'mayank.raj6090@gmail.com', 
+        pass: 'apbc ecia klnj rslt'      
+      }
+    });
+
+    // Send the Email
+    const mailOptions = {
+      from: 'Splitsathi Support <YOUR_EMAIL@gmail.com>', // <-- REPLACE WITH YOUR GMAIL
+      to: newEmail,
+      subject: 'Verify your email - Splitsathi',
+      text: `Your email verification code is: ${otp}\n\nPlease enter this in the Splitsathi app to update your profile.`
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`OTP sent successfully to ${newEmail}`);
+
+    return { success: true, message: 'OTP sent successfully!' };
+
+  } catch (error) {
+    console.error("Error sending OTP email:", error);
+    throw new functions.https.HttpsError('internal', 'Failed to send OTP.');
+  }
+});

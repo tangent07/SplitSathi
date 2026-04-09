@@ -1,3 +1,4 @@
+import 'receipt_scanner_screen.dart';
 import 'add_friend_sheet.dart';
 import '../services/notification_service.dart';
 import 'dart:async';
@@ -1070,7 +1071,48 @@ class _LiveGlobalHeaderState extends State<LiveGlobalHeader> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(children: [Builder(builder: (innerContext) => GestureDetector(onTap: () => Scaffold.of(innerContext).openDrawer(), child: const Padding(padding: EdgeInsets.only(right: 12.0), child: Icon(Icons.menu, color: Colors.white, size: 28)))), RichText(text: const TextSpan(children: [TextSpan(text: 'Split', style: TextStyle(fontFamily: 'Nunito', fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white)), TextSpan(text: 'Sathi', style: TextStyle(fontFamily: 'Nunito', fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFFFCD34D)))]))]),
-                  GestureDetector(onTap: () { HapticFeedback.lightImpact(); provider.toggleDarkMode(); }, child: Container(width: 36, height: 36, decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), child: Center(child: Text(isDark ? '☀️' : '🌙', style: const TextStyle(fontSize: 18))))),
+                  
+                  // --- NEW: SCANNER & DARK MODE ROW ---
+                  Row(
+                    children: [
+                      // 1. The Scanner Button
+                      GestureDetector(
+                        onTap: () async {
+                          HapticFeedback.lightImpact();
+                          final scannedTotal = await Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (context) => const ReceiptScannerScreen()),
+                          );
+                          
+                          // If they scanned a bill, open Quick Split with the total!
+                          if (scannedTotal != null && scannedTotal is double) {
+                            if (context.mounted) {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(builder: (context) => QuickSplitScreen(initialTotal: scannedTotal)),
+                              );
+                            }
+                          }
+                        }, 
+                        child: Container(
+                          width: 36, height: 36, 
+                          margin: const EdgeInsets.only(right: 10), // Spacing between buttons
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), 
+                          child: const Center(child: Icon(Icons.document_scanner_outlined, color: Colors.white, size: 20))
+                        )
+                      ),
+                      
+                      // 2. The Existing Dark Mode Toggle
+                      GestureDetector(
+                        onTap: () { HapticFeedback.lightImpact(); provider.toggleDarkMode(); }, 
+                        child: Container(
+                          width: 36, height: 36, 
+                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), 
+                          child: Center(child: Text(isDark ? '☀️' : '🌙', style: const TextStyle(fontSize: 18)))
+                        )
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const Padding(padding: EdgeInsets.only(left: 40.0, top: 4), child: Text('Split bills. Not friendships. 🤝', style: TextStyle(fontSize: 12, color: Colors.white60))),

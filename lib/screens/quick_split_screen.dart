@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:splitsathi/screens/receipt_scanner_screen.dart';
 import '../providers/app_provider.dart';
 import '../utils/constants.dart';
 
@@ -25,33 +26,39 @@ class Settlement {
 
 // --- SCREEN ---
 class QuickSplitScreen extends StatefulWidget {
-  const QuickSplitScreen({super.key});
+  final double? initialTotal; // <-- NEW: Accepts data from the scanner
+
+  const QuickSplitScreen({super.key, this.initialTotal});
 
   @override
   State<QuickSplitScreen> createState() => _QuickSplitScreenState();
 }
 
 class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerProviderStateMixin {
-  // State: 0 = Initial (Ask Count), 1 = Splitting (Show List), 2 = Results (Show Overlay)
   int _currentStep = 0; 
   
   final TextEditingController _countController = TextEditingController();
   List<SplitPerson> _people = [];
 
-  // Result State
   double _displayTotal = 0.0;
   double _displayFairShare = 0.0;
   List<Settlement> _finalSettlements = [];
+  
+  double? _targetTotal; // <-- NEW: Stores the scanned amount to show the user
 
   @override
   void initState() {
     super.initState();
-    // Trigger the entry animation for Part 1 after a micro-delay
+    // If we came from the home page scanner, save the total!
+    if (widget.initialTotal != null) {
+      _targetTotal = widget.initialTotal;
+    }
+    
     Future.delayed(const Duration(milliseconds: 100), () {
       if (mounted) setState(() => _currentStep = 0);
     });
   }
-
+  
   @override
   void dispose() {
     _countController.dispose();
@@ -232,10 +239,29 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
         children: [
           IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.orange, size: 20), onPressed: () => Navigator.pop(context)),
           const Text('Advanced Split', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.orange)),
-          IconButton(
-            icon: const Icon(Icons.refresh, color: AppColors.orange, size: 22), 
-            onPressed: _resetFlow,
-          ),
+          Row(
+            children: [
+              // --- NEW: INTERNAL SCANNER BUTTON ---
+              IconButton(
+                icon: const Icon(Icons.document_scanner_outlined, color: AppColors.orange, size: 22), 
+                onPressed: () async {
+                  final scannedTotal = await Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (context) => const ReceiptScannerScreen()),
+                  );
+                  if (scannedTotal != null && scannedTotal is double) {
+                    setState(() {
+                      _targetTotal = scannedTotal; // Update the UI with the new total
+                    });
+                  }
+                },
+              ),
+              IconButton(
+                icon: const Icon(Icons.refresh, color: AppColors.orange, size: 22), 
+                onPressed: _resetFlow,
+              ),
+            ],
+          )
         ],
       ),
     );
