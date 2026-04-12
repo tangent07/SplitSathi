@@ -1,3 +1,4 @@
+import '../widgets/settle_up_sheet.dart';
 import 'add_friend_sheet.dart';
 import '../services/auth_service.dart';
 import '../services/db_service.dart';
@@ -372,6 +373,7 @@ class _ExpensesTab extends StatelessWidget {
       itemBuilder: (context, index) {
         final exp = expenses[index];
         final expDate = DateFormat('d MMM yyyy').format(exp.deleted ? (exp.deletedAt ?? exp.date) : exp.date);
+        
         String? prevDate;
         if (index > 0) {
           final prev = expenses[index - 1];
@@ -379,25 +381,37 @@ class _ExpensesTab extends StatelessWidget {
         }
         final showDateSep = index == 0 || expDate != prevDate;
 
+        // --- NEW: SMART BORDER LOGIC ---
+        // Peek at the NEXT item in the list. If it starts a new date, hide this item's bottom border!
+        bool hideBottomBorder = false;
+        if (index < expenses.length - 1) {
+          final nextExp = expenses[index + 1];
+          final nextDate = DateFormat('d MMM yyyy').format(nextExp.deleted ? (nextExp.deletedAt ?? nextExp.date) : nextExp.date);
+          if (nextDate != expDate) hideBottomBorder = true; 
+        } else {
+          hideBottomBorder = true; // Also hide it for the very last item on the screen
+        }
+
         return Column(
           children: [
             if (showDateSep)
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
+                padding: const EdgeInsets.symmetric(vertical: 16),
                 child: Row(
                   children: [
                     Expanded(child: Divider(color: isDark ? AppColors.darkBorder : AppColors.border, thickness: 1)),
-                    const SizedBox(width: 10),
-                    Text(expDate, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkMuted : AppColors.muted)),
-                    const SizedBox(width: 10),
+                    const SizedBox(width: 12),
+                    Text(expDate, style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: isDark ? AppColors.darkMuted : AppColors.muted, letterSpacing: 0.5)),
+                    const SizedBox(width: 12),
                     Expanded(child: Divider(color: isDark ? AppColors.darkBorder : AppColors.border, thickness: 1)),
                   ],
                 ),
               ),
 
             if (exp.deleted || exp.isGhost)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 8),
+              Container( // Wrapped the ghost item in a container to apply the border logic
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(border: Border(bottom: hideBottomBorder ? BorderSide.none : BorderSide(color: isDark ? AppColors.darkBorder : AppColors.border))),
                 child: Row(
                   children: [
                     Text(exp.isGhost ? (exp.category == '✅' ? '✅' : '🔄') : '🚫', style: const TextStyle(fontSize: 16)),
@@ -432,7 +446,8 @@ class _ExpensesTab extends StatelessWidget {
                   onTap: () => _openEditSheet(context, exp),
                   child: Container(
                     padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-                    decoration: BoxDecoration(border: Border(bottom: BorderSide(color: isDark ? AppColors.darkBorder : AppColors.border))),
+                    // --- NEW: APPLYING THE HIDE LOGIC HERE ---
+                    decoration: BoxDecoration(border: Border(bottom: hideBottomBorder ? BorderSide.none : BorderSide(color: isDark ? AppColors.darkBorder : AppColors.border))),
                     child: Row(
                       children: [
                         Container(
@@ -617,6 +632,35 @@ class _SettleUpTabState extends State<_SettleUpTab> {
     }
   }
 
+  Future<void> _handleSettleUp(String friendName, double amount) async {
+    HapticFeedback.mediumImpact();
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.orange)));
+
+    try {
+      final query = await FirebaseFirestore.instance.collection('users').where('name', isEqualTo: friendName).limit(1).get();
+      if (mounted) Navigator.pop(context); // close loading
+
+      String uid = '';
+      String? upiId;
+      if (query.docs.isNotEmpty) {
+        uid = query.docs.first.id;
+        upiId = query.docs.first.data()['upiId'] as String?;
+      }
+
+      if (mounted) {
+        showModalBottomSheet(
+          context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+          builder: (context) => SettleUpSheet(receiverName: friendName, receiverUid: uid, receiverUpiId: upiId, amount: amount, groupId: widget.group.id),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error fetching user data.')));
+      }
+    }
+  }
+
   void _showToast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
       content: Text(msg, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
@@ -678,160 +722,132 @@ class _SettleUpTabState extends State<_SettleUpTab> {
       );
     }
 
-    return Column(
-      children: [
-        Expanded(
-          child: ListView.builder(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-            itemCount: widget.balances.length,
-            itemBuilder: (context, i) {
-              final t = widget.balances[i];
-              final fromIdx = widget.group.members.indexOf(t['from'] as String);
-              final toIdx = widget.group.members.indexOf(t['to'] as String);
-              final amount = (t['amount'] as double).round();
-              final isSettling = _settling[i] ?? false;
-              final showPartial = _showPartial[i] ?? false;
-              final ctrl = _partialControllers.putIfAbsent(i, () => TextEditingController());
-              final surfaceColor = widget.isDark ? AppColors.darkSurface : Colors.white;
-              final borderColor = widget.isDark ? AppColors.darkBorder : AppColors.border;
-              final textColor = widget.isDark ? Colors.white : const Color(0xFF1C1C1C);
-
-              return AnimatedOpacity(
-                opacity: isSettling ? 0.4 : 1.0,
-                duration: const Duration(milliseconds: 300),
-                child: Container(
-                  margin: const EdgeInsets.only(bottom: 12),
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(color: surfaceColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: borderColor)),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            width: 40, height: 40,
-                            decoration: BoxDecoration(color: AppConstants.getAvatarColor(fromIdx), borderRadius: BorderRadius.circular(12)),
-                            child: Center(child: Text((t['from'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white))),
-                          ),
-                          const SizedBox(width: 8),
-                          const Icon(Icons.arrow_forward, color: AppColors.orange, size: 18),
-                          const SizedBox(width: 8),
-                          Container(
-                            width: 40, height: 40,
-                            decoration: BoxDecoration(color: AppConstants.getAvatarColor(toIdx), borderRadius: BorderRadius.circular(12)),
-                            child: Center(child: Text((t['to'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white))),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text('${t['from']} → ${t['to']}', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 14, color: textColor)),
-                                Text('$currency$amount', style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange)),
-                              ],
-                            ),
-                          ),
-                          Column(
-                            children: [
-                              _settleBtn('Full ✓', AppColors.success, () => _markFullSettled(i, currency)),
-                              const SizedBox(height: 6),
-                              _settleBtn('Partial', AppColors.orange, () {
-                                setState(() => _showPartial[i] = !showPartial);
-                                if (!showPartial) _openNumpadForPartial(i);
-                              }),
-                            ],
-                          ),
-                        ],
-                      ),
-                      if (showPartial) ...[
-                        const SizedBox(height: 12),
-                        const Divider(),
-                        const SizedBox(height: 8),
-                        Text('How much is ${t['from']} paying now?', style: TextStyle(fontSize: 12, color: widget.isDark ? AppColors.darkMuted : AppColors.muted)),
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: GestureDetector(
-                                onTap: () => _openNumpadForPartial(i),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                  decoration: BoxDecoration(color: widget.isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.orange)),
-                                  child: Row(
-                                    children: [
-                                      Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, color: AppColors.orange, fontSize: 16)),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        ctrl.text.isEmpty ? 'Enter amount' : ctrl.text,
-                                        style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, color: ctrl.text.isEmpty ? (widget.isDark ? AppColors.darkMuted : AppColors.muted) : textColor),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () => _markPartialSettled(i, currency),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                                decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(10)),
-                                child: const Text('Confirm', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13)),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () => setState(() => _showPartial[i] = false),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(color: widget.isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(10), border: Border.all(color: borderColor)),
-                                child: const Icon(Icons.close, size: 16, color: AppColors.muted),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ),
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 80),
+      itemCount: widget.balances.length + 1, // +1 for the WhatsApp button
+      itemBuilder: (context, i) {
         
-        // --- THE WHATSAPP BUTTON ---
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 80),
-          child: GestureDetector(
-            onTap: () => _shareWhatsApp(currency),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFF25D366),
-                borderRadius: BorderRadius.circular(14),
-              ),
-              child: const Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.chat_bubble, color: Colors.white, size: 20),
-                  SizedBox(width: 10),
-                  Text('Send Reminder on WhatsApp', style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
-                ],
+        // Render the WhatsApp button at the very end of the list
+        if (i == widget.balances.length) {
+          return Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: GestureDetector(
+              onTap: () => _shareWhatsApp(currency),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                decoration: BoxDecoration(color: const Color(0xFF25D366), borderRadius: BorderRadius.circular(14)),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.chat_bubble, color: Colors.white, size: 20),
+                    SizedBox(width: 10),
+                    Text('Send Reminder on WhatsApp', style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                  ],
+                ),
               ),
             ),
+          );
+        }
+
+        final t = widget.balances[i];
+        final fromIdx = widget.group.members.indexOf(t['from'] as String);
+        final toIdx = widget.group.members.indexOf(t['to'] as String);
+        final amount = (t['amount'] as double).round();
+        final isSettling = _settling[i] ?? false;
+        final showPartial = _showPartial[i] ?? false;
+        final ctrl = _partialControllers.putIfAbsent(i, () => TextEditingController());
+        final surfaceColor = widget.isDark ? AppColors.darkSurface : Colors.white;
+        final borderColor = widget.isDark ? AppColors.darkBorder : AppColors.border;
+        final textColor = widget.isDark ? Colors.white : const Color(0xFF1C1C1C);
+        final fromUser = t['from'] as String;
+        final toUser = t['to'] as String;
+        final isMe = (fromUser == 'You' || toUser == 'You');
+
+        return AnimatedOpacity(
+          opacity: isSettling ? 0.4 : 1.0,
+          duration: const Duration(milliseconds: 300),
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(color: surfaceColor, borderRadius: BorderRadius.circular(16), border: Border.all(color: borderColor)),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Container(width: 40, height: 40, decoration: BoxDecoration(color: AppConstants.getAvatarColor(fromIdx), borderRadius: BorderRadius.circular(12)), child: Center(child: Text((t['from'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white)))),
+                    const SizedBox(width: 8), const Icon(Icons.arrow_forward, color: AppColors.orange, size: 18), const SizedBox(width: 8),
+                    Container(width: 40, height: 40, decoration: BoxDecoration(color: AppConstants.getAvatarColor(toIdx), borderRadius: BorderRadius.circular(12)), child: Center(child: Text((t['to'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white)))),
+                    const SizedBox(width: 12),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${t['from']} → ${t['to']}', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 14, color: textColor)), Text('$currency$amount', style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange))])),
+                    Column(
+                      children: [
+                        // TOP BUTTON: Settle / Pay
+                        if (!isMe) 
+                          _settleBtn('Mark Settled ✓', AppColors.success, null) // Disabled (Grey)
+                        else if (fromUser == 'You')
+                          _settleBtn('Pay (UPI/Cash)', AppColors.success, () => _handleSettleUp(toUser, amount.toDouble())) // <-- Added .toDouble() here!
+                        else
+                          _settleBtn('Mark Settled ✓', AppColors.success, () => _markFullSettled(i, currency)),
+                        
+                        const SizedBox(height: 6),
+                        
+                        // BOTTOM BUTTON: Partial
+                        _settleBtn('Partial', AppColors.orange, isMe ? () { 
+                          setState(() => _showPartial[i] = !showPartial); 
+                          if (!showPartial) _openNumpadForPartial(i); 
+                        } : null), // Passes null if it's not you, making it grey & unclickable
+                      ],
+                    )
+                  ],
+                ),
+                if (showPartial) ...[
+                  const SizedBox(height: 12), const Divider(), const SizedBox(height: 8),
+                  Text('How much is ${t['from']} paying now?', style: TextStyle(fontSize: 12, color: widget.isDark ? AppColors.darkMuted : AppColors.muted)),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(child: GestureDetector(onTap: () => _openNumpadForPartial(i), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: widget.isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.orange)), child: Row(children: [Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, color: AppColors.orange, fontSize: 16)), const SizedBox(width: 6), Text(ctrl.text.isEmpty ? 'Enter amount' : ctrl.text, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, color: ctrl.text.isEmpty ? (widget.isDark ? AppColors.darkMuted : AppColors.muted) : textColor))])))),
+                      const SizedBox(width: 8), GestureDetector(onTap: () => _markPartialSettled(i, currency), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(10)), child: const Text('Confirm', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13)))),
+                      const SizedBox(width: 8), GestureDetector(onTap: () => setState(() => _showPartial[i] = false), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: widget.isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(10), border: Border.all(color: borderColor)), child: const Icon(Icons.close, size: 16, color: AppColors.muted))),
+                    ],
+                  ),
+                ],
+              ],
+            ),
           ),
-        ),
-      ],
+        );
+      },
     );
   }
 
-  Widget _settleBtn(String label, Color color, VoidCallback onTap) {
+  Widget _settleBtn(String label, Color color, VoidCallback? onTap) {
+    // If onTap is null, the button is "disabled" and turns grey
+    final bool isDisabled = onTap == null;
+    final Color effectiveColor = isDisabled ? Colors.grey.shade400 : color;
+
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(color: color.withOpacity(0.1), border: Border.all(color: color), borderRadius: BorderRadius.circular(10)),
-        child: Text(label, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 12, color: color)),
+        width: 110, // Fixed width so all buttons are exactly the same size!
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+        decoration: BoxDecoration(
+          color: effectiveColor.withOpacity(0.1), 
+          border: Border.all(color: effectiveColor, width: 1.2), 
+          borderRadius: BorderRadius.circular(10)
+        ),
+        child: Center(
+          child: Text(
+            label, 
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontFamily: 'Nunito', 
+              fontWeight: FontWeight.w800, 
+              fontSize: 12, 
+              color: effectiveColor
+            ),
+          ),
+        ),
       ),
     );
   }

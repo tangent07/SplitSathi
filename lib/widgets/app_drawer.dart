@@ -1,6 +1,11 @@
+import 'export_report_sheet.dart';
+import 'package:flutter/services.dart';
+import '../screens/receipt_scanner_screen.dart'; 
+import '../screens/quick_split_screen.dart';     
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
+import 'package:splitsathi/screens/payment_methods_screen.dart';
 import '../providers/app_provider.dart';
 import '../services/auth_service.dart';
 import '../utils/constants.dart';
@@ -160,19 +165,66 @@ class AppDrawer extends StatelessWidget {
                           },
                         ),
                         _buildDrawerItem(
-                          context: context, icon: Icons.account_balance_wallet_outlined, title: 'Payment Methods', isDark: isDark,
-                          onTap: () {},
+                          context: context, 
+                          icon: Icons.account_balance_wallet_outlined, 
+                          title: 'Payment Methods', 
+                          isDark: isDark,
+                          onTap: () {
+                            Navigator.pop(context); // This gracefully closes the drawer
+                            
+                            // This opens your new screen!
+                            Navigator.push(
+                              context, 
+                              MaterialPageRoute(builder: (context) => const PaymentMethodsScreen())
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 16),
                         _buildSectionHeader('TOOLS', isDark),
                         _buildDrawerItem(
-                          context: context, icon: Icons.document_scanner_outlined, title: 'Scan Receipt', isDark: isDark,
-                          onTap: () {},
+                          context: context, 
+                          icon: Icons.document_scanner_outlined, 
+                          title: 'Scan Receipt', 
+                          isDark: isDark,
+                          onTap: () async {
+                            Navigator.pop(context); // 1. Close the drawer first
+
+                            HapticFeedback.lightImpact();
+                            
+                            // 2. Open the Scanner Screen
+                            final scannedTotal = await Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (context) => const ReceiptScannerScreen()),
+                            );
+
+                            // 3. If a total was found, jump straight to Quick Split!
+                            if (scannedTotal != null && scannedTotal is double) {
+                              if (context.mounted) {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(builder: (context) => QuickSplitScreen(initialTotal: scannedTotal)),
+                                );
+                              }
+                            }
+                          },
                         ),
                         _buildDrawerItem(
-                          context: context, icon: Icons.insert_chart_outlined, title: 'Export Reports', isDark: isDark,
-                          onTap: () {},
+                          context: context, 
+                          icon: Icons.insert_chart_outlined, 
+                          title: 'Export Reports', 
+                          isDark: isDark,
+                          onTap: () {
+                            Navigator.pop(context); // Close the drawer
+                            
+                            // Open the new Export Sheet
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              backgroundColor: Colors.transparent,
+                              builder: (context) => ExportReportSheet(),
+                            );
+                          },
                         ),
 
                         const SizedBox(height: 16),

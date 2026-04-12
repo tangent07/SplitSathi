@@ -9,6 +9,13 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_contacts: ^2.0.1
+  pdf: ^3.11.1
+  csv: ^6.0.0
+  path_provider: ^2.1.2
+  share_plus: ^7.2.1
+  image_picker: ^1.0.7
+  google_mlkit_text_recognition: ^0.13.0
 
   # UI
   google_fonts: ^6.1.0
@@ -33,15 +40,11 @@ dependencies:
   url_launcher: ^6.3.2
   font_awesome_flutter: ^11.0.0
   flutter_dotenv: ^6.0.0
-  flutter_contacts: ^2.0.1
+  
 
 dev_dependencies:
-  image_picker: ^1.0.7
-  google_mlkit_text_recognition: ^0.13.0
   flutter_test:
     sdk: flutter
-  path_provider: ^2.1.2   # Lets us save the file temporarily
-  share_plus: ^7.2.1      # Opens the native iOS/Android share sheet
   flutter_lints: ^3.0.0
   flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.3.6

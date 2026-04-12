@@ -1,3 +1,4 @@
+import '../widgets/settle_up_sheet.dart';
 import 'add_friend_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -287,6 +288,35 @@ class FriendDetailScreen extends StatefulWidget {
 
 class _FriendDetailScreenState extends State<FriendDetailScreen> {
 
+  Future<void> _handleDirectSettleUp() async {
+    HapticFeedback.mediumImpact();
+    showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.orange)));
+
+    try {
+      final query = await FirebaseFirestore.instance.collection('users').where('name', isEqualTo: widget.friend.name).limit(1).get();
+      if (mounted) Navigator.pop(context);
+
+      String uid = '';
+      String? upiId;
+      if (query.docs.isNotEmpty) {
+        uid = query.docs.first.id;
+        upiId = query.docs.first.data()['upiId'] as String?;
+      }
+
+      if (mounted) {
+        showModalBottomSheet(
+          context: context, isScrollControlled: true, backgroundColor: Colors.transparent,
+          builder: (context) => SettleUpSheet(receiverName: widget.friend.name, receiverUid: uid, receiverUpiId: upiId, amount: widget.friend.netBalance.abs(), groupId: 'DIRECT'),
+        ).then((_) => setState((){})); // Refresh page when done!
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Error fetching user data.')));
+      }
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _fetchHistory(List<QueryDocumentSnapshot> directDocs) async {
     List<Map<String, dynamic>> history = [];
     final groupQuery = await FirebaseFirestore.instance.collection('groups').where('members', arrayContains: 'You').get();
@@ -408,10 +438,15 @@ class _FriendDetailScreenState extends State<FriendDetailScreen> {
                     child: Column(children: [Text(cardTitle, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: cardText)), const SizedBox(height: 8), Text(cardAmount, style: TextStyle(fontFamily: 'Nunito', fontSize: 44, fontWeight: FontWeight.w900, color: cardText, height: 1))]),
                   ),
                   const SizedBox(height: 24),
-                  GestureDetector(
-                    onTap: () { showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _DirectPaymentSheet(friendName: widget.friend.name)).then((_) => setState((){})); },
-                    child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)), child: const Center(child: Text('+ Record Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)))),
-                  ),
+                  widget.friend.netBalance < -0.01 
+                    ? GestureDetector(
+                        onTap: _handleDirectSettleUp,
+                        child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: AppColors.error, borderRadius: BorderRadius.circular(14)), child: const Center(child: Text('Settle Up (UPI / Cash) →', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)))),
+                      )
+                    : GestureDetector(
+                        onTap: () { showModalBottomSheet(context: context, isScrollControlled: true, backgroundColor: Colors.transparent, builder: (_) => _DirectPaymentSheet(friendName: widget.friend.name)).then((_) => setState((){})); },
+                        child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)), child: const Center(child: Text('+ Record Payment', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)))),
+                      ),
                   const SizedBox(height: 32),
                   Text('PAYMENT HISTORY', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 1.5)),
                   const SizedBox(height: 12),
