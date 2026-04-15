@@ -1,3 +1,4 @@
+import '../screens/contact_picker_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -69,65 +70,7 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
     }
   }
 
-  // --- 2. CONTACTS SEARCH (V2.0 Logic) ---
-  Future<void> _openContactsAndSearch() async {
-    final status = await FlutterContacts.permissions.request(PermissionType.readWrite);
-    if (status != PermissionStatus.granted) {
-      setState(() => _errorMessage = "Contact permission denied.");
-      return;
-    }
-
-    final String? pickedId = await FlutterContacts.native.showPicker();
-    if (pickedId == null) return; 
-
-    final contact = await FlutterContacts.get(
-      pickedId, 
-      properties: {ContactProperty.name, ContactProperty.phone}
-    );
-
-    if (contact == null || contact.phones.isEmpty) {
-      setState(() => _errorMessage = "This contact doesn't have a phone number saved.");
-      return;
-    }
-
-    setState(() {
-      _isLoading = true;
-      _foundUser = null;
-      _errorMessage = null;
-    });
-
-    try {
-      String rawNumber = contact.phones.first.number;
-      String cleanNumber = rawNumber.replaceAll(RegExp(r'\s+|-|\(|\)'), '');
-
-      final query = await FirebaseFirestore.instance.collection('users').where('phone', isEqualTo: cleanNumber).limit(1).get();
-
-      if (query.docs.isEmpty) {
-        setState(() {
-          _foundUser = {
-            'name': contact.displayName,
-            'phone': cleanNumber,
-            'isRegistered': false, 
-          };
-        });
-      } else {
-        final userData = query.docs.first.data() as Map<String, dynamic>;
-        userData['uid'] = query.docs.first.id;
-        userData['isRegistered'] = true; 
-        
-        if (userData['uid'] == AuthService().currentUser?.uid) {
-          setState(() => _errorMessage = "That's your own number!");
-        } else {
-          setState(() => _foundUser = userData);
-        }
-      }
-    } catch (e) {
-      setState(() => _errorMessage = "Error checking contact.");
-    } finally {
-      setState(() => _isLoading = false);
-    }
-  }
-
+  
   // --- 3. SEND SMS INVITE ---
   Future<void> _sendSmsInvite(String phoneNumber) async {
     final message = "Hey! I'm using SplitSathi to split our bills. Download it here: https://splitsathi.app";
@@ -234,9 +177,28 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
           
           const SizedBox(height: 16),
           
-          // --- THE CONTACTS BUTTON ---
+          //2. --- THE CONTACTS BUTTON ---
           GestureDetector(
-            onTap: _openContactsAndSearch,
+            onTap: () async {
+              setState(() => _errorMessage = null); // Clear old errors
+              
+              final selectedContact = await Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const ContactPickerScreen()), 
+              );
+
+              if (selectedContact != null) {
+                final phone = selectedContact.phones.isNotEmpty ? selectedContact.phones.first.number : '';
+                final name = selectedContact.displayName ?? '';
+
+                setState(() {
+                  _searchController.text = phone.isNotEmpty ? phone : name; 
+                });
+                
+                // Automatically search the database for this person!
+                _searchUser(); 
+              }
+            },
             child: Container(
               width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 14),
               decoration: BoxDecoration(color: Colors.transparent, borderRadius: BorderRadius.circular(12), border: Border.all(color: borderColor, width: 1.5)),

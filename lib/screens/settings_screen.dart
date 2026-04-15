@@ -1,3 +1,4 @@
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -147,7 +148,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ListTile(
             leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.orange),
             title: Text('Privacy Policy', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
-            onTap: () {},
+            onTap: () async {
+              final Uri url = Uri.parse('https://www.termsfeed.com/live/example-privacy-policy'); 
+              try {
+                if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+                  throw Exception('Could not launch URL');
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Could not open Privacy Policy')),
+                  );
+                }
+              }
+            },
           ),
 
           const Divider(height: 32),

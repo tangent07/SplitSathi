@@ -1,3 +1,9 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../screens/login_screen.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'export_report_sheet.dart';
 import 'package:flutter/services.dart';
 import '../screens/receipt_scanner_screen.dart'; 
@@ -230,9 +236,30 @@ class AppDrawer extends StatelessWidget {
                         const SizedBox(height: 16),
                         _buildSectionHeader('PREFERENCES', isDark),
                         _buildDrawerItem(
-                          context: context, icon: Icons.lock_outline_rounded, title: 'Security & App Lock', isDark: isDark,
-                          onTap: () {},
+                          context: context, 
+                          icon: Icons.privacy_tip_outlined, // A nice shield icon
+                          title: 'Privacy Policy', 
+                          isDark: isDark,
+                          onTap: () async {
+                            Navigator.pop(context); // Close the drawer first
+                            
+                            // Replace this URL with your actual Privacy Policy link later!
+                            final Uri url = Uri.parse('https://www.termsfeed.com/live/example-privacy-policy'); 
+                            
+                            try {
+                              if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+                                throw Exception('Could not launch URL');
+                              }
+                            } catch (e) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not open Privacy Policy')),
+                                );
+                              }
+                            }
+                          },
                         ),
+
                         _buildDrawerItem(
                           context: context, icon: Icons.settings_outlined, title: 'Settings', isDark: isDark,
                           onTap: () {
@@ -244,8 +271,18 @@ class AppDrawer extends StatelessWidget {
                         const SizedBox(height: 16),
                         _buildSectionHeader('COMMUNITY', isDark),
                         _buildDrawerItem(
-                          context: context, icon: Icons.person_add_outlined, title: 'Invite Friends', isDark: isDark,
-                          onTap: () {},
+                          context: context, 
+                          icon: Icons.person_add_alt_1_outlined, 
+                          title: 'Invite Friends', 
+                          isDark: isDark,
+                          onTap: () async {
+                            Navigator.pop(context); // Close the drawer first
+                            
+                            // Trigger the native share sheet
+                            await Share.share(
+                              'I use SplitSathi to split bills and track expenses. It makes settling up so easy! Download it here: https://splitsathi.com/download'
+                            );
+                          },
                         ),
                         _buildDrawerItem(
                           context: context, icon: Icons.help_outline_rounded, title: 'Help & Support', isDark: isDark,
@@ -265,9 +302,36 @@ class AppDrawer extends StatelessWidget {
                         const SizedBox(height: 16),
                         
                         InkWell(
-                          onTap: () async {
-                            Navigator.pop(context); 
-                            await AuthService().signOut(); 
+                          onTap: () {
+                            Navigator.pop(context);
+
+                            showDialog(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                                title: const Text('Logout', style: TextStyle(fontWeight: FontWeight.bold)),
+                                content: const Text('Are you sure you want to log out of SplitSathi?'),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.pop(context), // Close dialog on Cancel
+                                    child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+                                  ),
+                                  TextButton(
+                                    onPressed: () async {
+                                      Navigator.pop(context); // Close the dialog
+                                      
+                                      // Call your existing Auth Service!
+                                      await AuthService().signOut();
+                                      
+                                      // Note: If your app doesn't automatically redirect to the login screen 
+                                      // using an Auth Stream, you might need to add this navigation line:
+                                      // Navigator.pushAndRemoveUntil(context, MaterialPageRoute(builder: (_) => const LoginScreen()), (route) => false);
+                                    },
+                                    child: const Text('Logout', style: TextStyle(color: Colors.redAccent, fontWeight: FontWeight.bold)),
+                                  ),
+                                ],
+                              ),
+                            );
                           },
                           borderRadius: BorderRadius.circular(12),
                           child: Padding(

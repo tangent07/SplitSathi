@@ -1,3 +1,4 @@
+import '../screens/contact_picker_screen.dart';
 import 'dart:math' as math;
 import 'dart:ui';
 import 'package:flutter/material.dart';
@@ -355,17 +356,45 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: TextFormField(
-                initialValue: person.name,
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: isDark ? Colors.white : Colors.black87),
-                decoration: InputDecoration(
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                  border: InputBorder.none,
-                  hintText: 'Enter name...',
-                  hintStyle: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.normal)
-                ),
-                onChanged: (val) => person.name = val,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      // IMPORTANT: We need this ValueKey! It forces Flutter to update the 
+                      // text field automatically when the AI/Contact Picker changes the name.
+                      key: ValueKey(person.name), 
+                      initialValue: person.name,
+                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: isDark ? Colors.white : Colors.black87),
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: EdgeInsets.zero,
+                        border: InputBorder.none,
+                        hintText: 'Enter name...',
+                        hintStyle: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.normal)
+                      ),
+                      onChanged: (val) => person.name = val,
+                    ),
+                  ),
+                  
+                  // --- THE TRIGGER BUTTON ---
+                  IconButton(
+                    icon: const Icon(Icons.contacts_rounded, color: AppColors.orange, size: 20),
+                    onPressed: () async {
+                      // 1. Open the Contact Picker
+                      final selectedContact = await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => const ContactPickerScreen()),
+                      );
+                      
+                      // 2. If they picked someone, update the name!
+                      if (selectedContact != null) {
+                        setState(() {
+                          person.name = selectedContact.displayName;
+                        });
+                      }
+                    },
+                  ),
+                ],
               ),
             ),
             const SizedBox(width: 12),
