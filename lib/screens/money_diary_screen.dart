@@ -455,7 +455,7 @@ class _PastMonthsTab extends StatelessWidget {
       );
     }
   }
-
+  
   @override
   Widget build(BuildContext context) {
     final monthStr = DateFormat('yyyy-MM').format(selectedMonth);
@@ -501,7 +501,6 @@ class _PastMonthsTab extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        // --- NEW: THE EXPORT BUTTON ---
         if (activeOnMonth.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(bottom: 24),
@@ -522,6 +521,8 @@ class _PastMonthsTab extends StatelessWidget {
               ),
             ),
           ),
+
+        // --- NEW: THE EXPORT BUTTON ---
 
         if (activeOnMonth.isEmpty)
            const Padding(

@@ -33,17 +33,56 @@ class _ExportReportSheetState extends State<ExportReportSheet> {
       final myUid = AuthService().currentUser?.uid;
       if (myUid == null) throw Exception("User not logged in");
 
-      // 1. Fetch Data (Currently pulling Direct Payments)
-      final querySnapshot = await FirebaseFirestore.instance
-          .collection('direct_payments')
-          .where('userId', isEqualTo: myUid)
-          .get();
+      List<Map<String, dynamic>> allTransactions = [];
 
-      List<Map<String, dynamic>> transactions = querySnapshot.docs.map((doc) => doc.data()).toList();
+      // --- 1. FETCH DIRECT PAYMENTS ---
+      final directQuery = await FirebaseFirestore.instance.collection('direct_payments').where('userId', isEqualTo: myUid).get();
+      for (var doc in directQuery.docs) {
+        final data = doc.data();
+        allTransactions.add({
+          'date': data['date'],
+          'friendName': data['friendName'],
+          'youPaid': data['youPaid'] == true,
+          'amount': data['amount'],
+          'note': data['note'] ?? 'Direct Payment',
+        });
+      }
 
-      // Filter by timeframe
+      // --- 2. FETCH GROUP EXPENSES ---
+      // Find all groups where "You" are a member
+      final groupQuery = await FirebaseFirestore.instance.collection('groups').where('members', arrayContains: 'You').get();
+      for (var gDoc in groupQuery.docs) {
+        final groupName = gDoc.data()['name'] ?? 'Group';
+        final expQuery = await FirebaseFirestore.instance.collection('groups').doc(gDoc.id).collection('expenses').get();
+        
+        for (var expDoc in expQuery.docs) {
+          final exp = expDoc.data();
+          // Skip deleted or ghost records so they don't clutter the report
+          if (exp['deleted'] == true || exp['isGhost'] == true) continue;
+
+          final paidBy = exp['paidBy'] ?? '';
+          final splitAmong = List<String>.from(exp['splitAmong'] ?? []);
+          
+          // Only add it to your report if YOU are involved in this transaction!
+          if (paidBy == 'You' || splitAmong.contains('You')) {
+            String expName = exp['name'] ?? 'Expense';
+            
+            allTransactions.add({
+              // Convert Firestore Timestamp to string so the PDF/CSV generators can read it
+              'date': (exp['date'] as Timestamp).toDate().toIso8601String(),
+              // If you paid, show who you paid for. If they paid, show their name.
+              'friendName': paidBy == 'You' ? (splitAmong.length == 1 ? splitAmong.first : '${splitAmong.length} people') : paidBy,
+              'youPaid': paidBy == 'You',
+              'amount': exp['amount'],
+              'note': 'Group [$groupName]: $expName', // Adds the group name to the note!
+            });
+          }
+        }
+      }
+
+      // --- FILTER BY TIMEFRAME ---
       final now = DateTime.now();
-      transactions = transactions.where((t) {
+      allTransactions = allTransactions.where((t) {
         final date = DateTime.parse(t['date']);
         if (_selectedTimeframe == 'This Month') {
           return date.month == now.month && date.year == now.year;
@@ -54,24 +93,23 @@ class _ExportReportSheetState extends State<ExportReportSheet> {
         return true; // All Time
       }).toList();
 
-      // Sort chronological (newest first)
-      transactions.sort((a, b) => DateTime.parse(b['date']).compareTo(DateTime.parse(a['date'])));
+      // --- SORT CHRONOLOGICALLY ---
+      allTransactions.sort((a, b) => DateTime.parse(b['date']).compareTo(DateTime.parse(a['date'])));
 
-      if (transactions.isEmpty) {
+      if (allTransactions.isEmpty) {
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No data found for this timeframe.')));
         setState(() => _isGenerating = false);
         return;
       }
 
-      // 2. Generate File
+      // --- GENERATE & SHARE FILE ---
       File file;
       if (_selectedFormat == 'CSV') {
-        file = await _generateCSV(transactions);
+        file = await _generateCSV(allTransactions);
       } else {
-        file = await _generatePDF(transactions);
+        file = await _generatePDF(allTransactions);
       }
 
-      // 3. Share File natively
       if (mounted) {
         Navigator.pop(context); // Close sheet
         await Share.shareXFiles([XFile(file.path)], text: 'Here is my SplitSathi Report ($_selectedTimeframe)');
@@ -117,11 +155,11 @@ class _ExportReportSheetState extends State<ExportReportSheet> {
               pw.SizedBox(height: 24),
               pw.TableHelper.fromTextArray(
                 context: context,
-                headers: ['Date', 'Friend', 'Type', 'Amount', 'Note'],
+                headers: ['Date', 'Friend', 'Type', 'Amount(INR)', 'Note'],
                 data: transactions.map((t) {
                   final date = DateFormat('MMM d, yyyy').format(DateTime.parse(t['date']));
                   final type = t['youPaid'] == true ? "You Paid" : "They Paid";
-                  return [date, t['friendName'], type, '$currency${t['amount']}', t['note'] ?? ''];
+                  return [date, t['friendName'], type, t['amount'].toString(), t['note'] ?? ''];
                 }).toList(),
                 headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
                 headerDecoration: const pw.BoxDecoration(color: PdfColors.orange),
