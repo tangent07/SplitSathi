@@ -1,3 +1,4 @@
+import 'package:share_plus/share_plus.dart';
 import '../screens/contact_picker_screen.dart';
 import 'dart:math' as math;
 import 'dart:ui';
@@ -71,15 +72,15 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
     FocusScope.of(context).unfocus(); 
     
     final total = _people.fold(0.0, (sum, p) => sum + p.amountPaid);
-    final fairShare = _people.isEmpty ? 0.0 : total / _people.length;
     
+    // --- CHECK FOR EASTER EGG 1: BROKE ---
     if (total == 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter amounts greater than ₹0.')),
-      );
+      _showBrokeAnimation();
       return;
     }
 
+    // --- NORMAL SPLIT LOGIC ---
+    final fairShare = _people.isEmpty ? 0.0 : total / _people.length;
     HapticFeedback.mediumImpact();
 
     List<Map<String, dynamic>> balances = _people.map((p) => {
@@ -360,17 +361,25 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
                 children: [
                   Expanded(
                     child: TextFormField(
-                      // IMPORTANT: We need this ValueKey! It forces Flutter to update the 
-                      // text field automatically when the AI/Contact Picker changes the name.
                       key: ValueKey(person.name), 
                       initialValue: person.name,
                       style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: isDark ? Colors.white : Colors.black87),
                       decoration: InputDecoration(
                         isDense: true,
-                        contentPadding: EdgeInsets.zero,
-                        border: InputBorder.none,
+                        // 1. Give it a tiny bit of breathing room at the bottom
+                        contentPadding: const EdgeInsets.only(bottom: 4, top: 4), 
+                        
+                        // 2. Add a subtle underline so it looks like an input field
+                        border: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300)),
+                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300)),
+                        focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppColors.orange, width: 2)),
+                        
                         hintText: 'Enter name...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.normal)
+                        hintStyle: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.normal),
+                        
+                        // 3. Add a tiny pencil icon to the right side of the text!
+                        suffixIconConstraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                        suffixIcon: Icon(Icons.edit_rounded, size: 14, color: isDark ? Colors.grey.shade600 : Colors.grey.shade400),
                       ),
                       onChanged: (val) => person.name = val,
                     ),
@@ -407,6 +416,9 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
               ),
               child: TextFormField(
                 keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                inputFormatters: [
+                  FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                ],
                 textAlign: TextAlign.right,
                 style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange),
                 decoration: InputDecoration(
@@ -580,24 +592,56 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
   void _shareSplit(List<Settlement> settlements) {
     HapticFeedback.mediumImpact();
     String shareText = '🧾 *Splitsathi Advanced Split*\nTotal Spent: ₹${_displayTotal.round()}\nFair Share: ₹${_displayFairShare.round()} / person\n\n*How to Settle Up:*\n';
+    
     for (var s in settlements) {
       shareText += '💸 ${s.from} owes ${s.to} ₹${s.amount.round()}\n';
     }
-    Clipboard.setData(ClipboardData(text: shareText));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: const Row(
-          children: [
-            Icon(Icons.check_circle, color: Colors.white),
-            SizedBox(width: 12),
-            Text('Settlement plan copied!', style: TextStyle(fontWeight: FontWeight.bold)),
-          ],
-        ),
-        backgroundColor: Colors.green.shade600,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        margin: const EdgeInsets.all(20),
-      ),
+
+    Share.share(shareText, subject: 'SplitSathi Settlement');
+  }
+
+  // --- EASTER EGG 1: THE BROKE WALLET ---
+  void _showBrokeAnimation() {
+    HapticFeedback.heavyImpact();
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: "Broke",
+      transitionDuration: const Duration(milliseconds: 400),
+      pageBuilder: (context, anim1, anim2) {
+        return Center(
+          child: Material(
+            color: Colors.transparent,
+            child: Container(
+              margin: const EdgeInsets.all(24),
+              padding: const EdgeInsets.all(32),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1C1C1C),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.5), blurRadius: 40, spreadRadius: 10)],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('🪰', style: TextStyle(fontSize: 40)),
+                  const Text('👛', style: TextStyle(fontSize: 80)),
+                  const SizedBox(height: 24),
+                  const Text('FUNDS DEPLETED', style: TextStyle(color: Colors.redAccent, letterSpacing: 2, fontSize: 14, fontWeight: FontWeight.w900)),
+                  const SizedBox(height: 12),
+                  const Text('Even our AI cannot divide ₹0.\nYou are officially broke.', textAlign: TextAlign.center, style: TextStyle(color: Colors.white, fontSize: 16)),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade800),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text('Accept Reality', style: TextStyle(color: Colors.white)),
+                  )
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, a1, a2, child) => Transform.scale(scale: a1.value, child: Opacity(opacity: a1.value, child: child)),
     );
   }
 }
