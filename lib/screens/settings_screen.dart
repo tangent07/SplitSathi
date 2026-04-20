@@ -19,6 +19,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _notifyNewExpense = true;
   bool _notifySettledUp = true;
   bool _notifyGroupInvites = true;
+  final String _playStoreLink = '';
+  final String _privacyPolicyLink = 'https://www.termsfeed.com/live/example-privacy-policy';
+  final String _supportEmail = 'splitsathi@gmail.com';
 
   // --- SECRET EASTER EGG VARIABLES ---
   int _versionTapCount = 0;
@@ -82,11 +85,31 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Placeholder for App Store redirect
-  void _redirectToAppStore() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Redirecting to App Store... 🚀')),
+  // --- LINK HANDLERS ---
+  Future<void> _rateApp() async {
+    if (_playStoreLink.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Play Store link coming soon! 🚀')),
+      );
+      return;
+    }
+    final Uri url = Uri.parse(_playStoreLink);
+    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open store')));
+    }
+  }
+
+  Future<void> _sendFeedback() async {
+    // Opens the user's email app (Gmail, Apple Mail, etc.)
+    final Uri emailUri = Uri(
+      scheme: 'mailto',
+      path: _supportEmail,
+      query: 'subject=SplitSathi App Feedback', // Pre-fills the subject line!
     );
+    
+    if (!await launchUrl(emailUri)) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open email app')));
+    }
   }
 
   @override
@@ -178,28 +201,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 leading: const Icon(Icons.star_rate_rounded, color: Colors.amber),
                 title: Text('Rate SplitSathi', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
-                onTap: _redirectToAppStore,
+                onTap: _rateApp, // Wired to our new method!
               ),
               ListTile(
                 leading: const Icon(Icons.chat_bubble_outline, color: AppColors.orange),
                 title: Text('Send Feedback', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
-                onTap: _redirectToAppStore, 
+                onTap: _sendFeedback, // Wired to open an email!
               ),
               ListTile(
                 leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.orange),
                 title: Text('Privacy Policy', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 onTap: () async {
-                  final Uri url = Uri.parse('https://www.termsfeed.com/live/example-privacy-policy'); 
-                  try {
-                    if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
-                      throw Exception('Could not launch URL');
-                    }
-                  } catch (e) {
+                  final Uri url = Uri.parse(_privacyPolicyLink); 
+                  if (!await launchUrl(url, mode: LaunchMode.externalApplication)) {
                     if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Could not open Privacy Policy')),
-                      );
+                      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not open Privacy Policy')));
                     }
                   }
                 },
