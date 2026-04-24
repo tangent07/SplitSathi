@@ -349,69 +349,41 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
         boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 12, offset: const Offset(0, 4))],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(
           children: [
+            // 1. Avatar
             CircleAvatar(
-              radius: 22,
+              radius: 20,
               backgroundColor: avatarColor.withOpacity(0.15),
               child: Icon(Icons.person, color: avatarColor, size: 20),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
+            
+            // 2. Name Field (Contacts button removed!)
             Expanded(
-              child: Row(
-                children: [
-                  Expanded(
-                    child: TextFormField(
-                      key: ValueKey(person.name), 
-                      initialValue: person.name,
-                      style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: isDark ? Colors.white : Colors.black87),
-                      decoration: InputDecoration(
-                        isDense: true,
-                        // 1. Give it a tiny bit of breathing room at the bottom
-                        contentPadding: const EdgeInsets.only(bottom: 4, top: 4), 
-                        
-                        // 2. Add a subtle underline so it looks like an input field
-                        border: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300)),
-                        enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.grey.shade700 : Colors.grey.shade300)),
-                        focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppColors.orange, width: 2)),
-                        
-                        hintText: 'Enter name...',
-                        hintStyle: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.normal),
-                        
-                        // 3. Add a tiny pencil icon to the right side of the text!
-                        suffixIconConstraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-                        suffixIcon: Icon(Icons.edit_rounded, size: 14, color: isDark ? Colors.grey.shade600 : Colors.grey.shade400),
-                      ),
-                      onChanged: (val) => person.name = val,
-                    ),
-                  ),
-                  
-                  // --- THE TRIGGER BUTTON ---
-                  IconButton(
-                    icon: const Icon(Icons.contacts_rounded, color: AppColors.orange, size: 20),
-                    onPressed: () async {
-                      // 1. Open the Contact Picker
-                      final selectedContact = await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => const ContactPickerScreen()),
-                      );
-                      
-                      // 2. If they picked someone, update the name!
-                      if (selectedContact != null) {
-                        setState(() {
-                          person.name = selectedContact.displayName;
-                        });
-                      }
-                    },
-                  ),
-                ],
+              child: TextFormField(
+                key: ValueKey(person.name), 
+                initialValue: person.name,
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16, color: isDark ? Colors.white : Colors.black87),
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 8), 
+                  enabledBorder: UnderlineInputBorder(borderSide: BorderSide(color: isDark ? Colors.grey.shade800 : Colors.grey.shade200)),
+                  focusedBorder: const UnderlineInputBorder(borderSide: BorderSide(color: AppColors.orange, width: 2)),
+                  hintText: 'Enter name...',
+                  hintStyle: TextStyle(color: Colors.grey.shade400, fontWeight: FontWeight.normal),
+                ),
+                onChanged: (val) => person.name = val,
               ),
             ),
+            
             const SizedBox(width: 12),
+            
+            // 3. Amount Field
             Container(
-              width: 110,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              width: 95, 
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               decoration: BoxDecoration(
                 color: isDark ? AppColors.darkBg : Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(16),
@@ -422,13 +394,13 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
                   FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
                 ],
                 textAlign: TextAlign.right,
-                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange),
+                style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, color: AppColors.orange),
                 decoration: InputDecoration(
                   isDense: true,
                   contentPadding: EdgeInsets.zero,
                   border: InputBorder.none,
                   prefixText: '₹ ',
-                  prefixStyle: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.bold, fontSize: 16),
+                  prefixStyle: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.bold, fontSize: 14),
                   hintText: '0',
                   hintStyle: TextStyle(color: AppColors.orange.withOpacity(0.4))
                 ),

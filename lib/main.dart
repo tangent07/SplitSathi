@@ -41,6 +41,17 @@ class SplitSathiApp extends StatelessWidget {
       themeMode: provider.isDark ? ThemeMode.dark : ThemeMode.light,
       theme: _lightTheme(),
       darkTheme: _darkTheme(),
+      
+      // 👇 THE MAGIC HAPPENS HERE: This scales the text globally! 👇
+      builder: (context, child) {
+        return MediaQuery(
+          data: MediaQuery.of(context).copyWith(
+            textScaler: TextScaler.linear(provider.textScale),
+          ),
+          child: child!,
+        );
+      },
+
       home: const SplashScreen(),
     );
   }
@@ -102,12 +113,10 @@ class AuthGate extends StatelessWidget {
           );
         }
 
-        // 1. Not logged in? -> Login Screen.
         if (!authSnapshot.hasData || authSnapshot.data == null) {
           return const LoginScreen();
         }
 
-        // 2. Logged in — check if their profile has a name yet.
         return StreamBuilder<DocumentSnapshot>(
           stream: FirebaseFirestore.instance
               .collection('users')
@@ -133,7 +142,6 @@ class AuthGate extends StatelessWidget {
               }
             }
 
-            // Name missing or doc doesn't exist yet -> Setup.
             return const ProfileSetupScreen();
           },
         );

@@ -17,7 +17,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // Local state for our notification/haptic toggles
   bool _notifyNewExpense = true;
   bool _notifySettledUp = true;
   bool _notifyGroupInvites = true;
@@ -25,7 +24,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final String _privacyPolicyLink = 'https://www.termsfeed.com/live/example-privacy-policy';
   final String _supportEmail = 'splitsathi@gmail.com';
 
-  // --- SECRET EASTER EGG VARIABLES ---
   int _versionTapCount = 0;
   DateTime? _lastTapTime;
   late ConfettiController _confettiController;
@@ -33,7 +31,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    // Initialize the confetti controller to drop for 5 seconds
     _confettiController = ConfettiController(duration: const Duration(seconds: 5));
     _loadPreferences();
   }
@@ -53,10 +50,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  // --- SECRET EASTER EGG LOGIC ---
   void _handleSecretTap() {
     final now = DateTime.now();
-    // If it's been more than 500ms since the last tap, reset the counter
     if (_lastTapTime == null || now.difference(_lastTapTime!) > const Duration(milliseconds: 500)) {
       _versionTapCount = 1;
     } else {
@@ -64,15 +59,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     }
     _lastTapTime = now;
 
-    // The Magic Number is 7 taps!
     if (_versionTapCount == 7) {
       _versionTapCount = 0; 
       HapticFeedback.heavyImpact();
-      _confettiController.play(); // MAKE IT RAIN!
+      _confettiController.play(); 
     }
   }
 
-  // A quick dialog for picking currency, now wired to the AppProvider!
   void _showCurrencyPicker(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -85,7 +78,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return ListTile(
                 title: Text(currency, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
                 onTap: () {
-                  // Tell the global provider to save the new currency!
                   context.read<AppProvider>().setCurrency(currency.split(' ')[0]);
                   Navigator.pop(bottomSheetContext);
                 },
@@ -97,7 +89,86 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // --- LINK HANDLERS ---
+  // 👇 NEW: The Text Size Picker Menu 👇
+  // 👇 UPGRADED: Horizontal Slider Text Size Picker 👇
+  void _showTextSizePicker(BuildContext context) {
+    final sizes = ['XS', 'S', 'M', 'L', 'XL'];
+    final provider = context.read<AppProvider>();
+    
+    // Find where the current size sits on our 0-4 scale (Defaults to 2 / 'M' if not found)
+    double currentValue = sizes.indexOf(provider.textSize).toDouble();
+    if (currentValue < 0) currentValue = 2.0; 
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
+      builder: (bottomSheetContext) {
+        // StatefulBuilder allows the slider to update its position smoothly while dragging
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 24.0, horizontal: 20.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('Adjust Text Size', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                    const SizedBox(height: 24),
+                    
+                    // The Custom Slider
+                    SliderTheme(
+                      data: SliderThemeData(
+                        activeTrackColor: AppColors.orange,
+                        inactiveTrackColor: AppColors.orange.withOpacity(0.2),
+                        thumbColor: AppColors.orange,
+                        overlayColor: AppColors.orange.withOpacity(0.1),
+                        tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 4.5),
+                        activeTickMarkColor: Colors.white,
+                        inactiveTickMarkColor: AppColors.orange.withOpacity(0.4),
+                      ),
+                      child: Slider(
+                        value: currentValue,
+                        min: 0,
+                        max: 4,
+                        divisions: 4, // Snaps exactly to our 5 sizes
+                        onChanged: (val) {
+                          setModalState(() {
+                            currentValue = val;
+                          });
+                          // Triggers the real-time scale update in the background!
+                          provider.setTextSize(sizes[val.toInt()]);
+                        },
+                      ),
+                    ),
+                    
+                    // The X-Axis Labels
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 18.0),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: sizes.map((size) => Text(
+                          size, 
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold, 
+                            // Highlight the currently selected label
+                            color: sizes[currentValue.toInt()] == size 
+                                ? AppColors.orange 
+                                : Colors.grey.shade500
+                          ),
+                        )).toList(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+                ),
+              ),
+            );
+          }
+        );
+      },
+    );
+  }
+
   Future<void> _rateApp() async {
     if (_playStoreLink.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -112,11 +183,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   Future<void> _sendFeedback() async {
-    // Opens the user's email app (Gmail, Apple Mail, etc.)
     final Uri emailUri = Uri(
       scheme: 'mailto',
       path: _supportEmail,
-      query: 'subject=SplitSathi App Feedback', // Pre-fills the subject line!
+      query: 'subject=SplitSathi App Feedback', 
     );
     
     if (!await launchUrl(emailUri)) {
@@ -131,14 +201,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
     final sectionColor = isDark ? AppColors.darkMuted : AppColors.muted;
     
-    // Grab the live currency from the provider!
     final currentCurrency = context.watch<AppProvider>().currency;
+    final currentTextSize = context.watch<AppProvider>().textSize; // <-- Grab current text size
     final isHapticsOn = context.watch<AppProvider>().hapticsEnabled;
 
     return Stack(
       alignment: Alignment.topCenter,
       children: [
-        // --- BASE LAYER: The actual Settings Screen ---
         Scaffold(
           backgroundColor: bg,
           appBar: AppBar(
@@ -151,7 +220,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               const SizedBox(height: 16),
 
-              // --- PREFERENCES SECTION ---
               _buildSectionHeader('PREFERENCES', sectionColor),
               ListTile(
                 leading: const Icon(Icons.payments_outlined, color: AppColors.orange),
@@ -165,6 +233,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 onTap: () => _showCurrencyPicker(context),
               ),
+
+              // 👇 NEW: The Text Size UI Option 👇
+              ListTile(
+                leading: const Icon(Icons.text_fields_rounded, color: AppColors.orange),
+                title: Text('Text Size', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(currentTextSize, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.orange)),
+                    const Icon(Icons.chevron_right, color: Colors.grey),
+                  ],
+                ),
+                onTap: () => _showTextSizePicker(context),
+              ),
+
               SwitchListTile(
                 activeColor: AppColors.orange,
                 secondary: const Icon(Icons.vibration, color: AppColors.orange),
@@ -179,7 +262,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               
               const Divider(height: 32),
 
-              // --- NOTIFICATIONS SECTION ---
               _buildSectionHeader('PUSH NOTIFICATIONS', sectionColor),
               SwitchListTile(
                 activeColor: AppColors.orange,
@@ -220,19 +302,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const Divider(height: 32),
 
-              // --- SUPPORT & FEEDBACK ---
               _buildSectionHeader('SUPPORT', sectionColor),
               ListTile(
                 leading: const Icon(Icons.star_rate_rounded, color: Colors.amber),
                 title: Text('Rate SplitSathi', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
-                onTap: _rateApp, // Wired to our new method!
+                onTap: _rateApp, 
               ),
               ListTile(
                 leading: const Icon(Icons.chat_bubble_outline, color: AppColors.orange),
                 title: Text('Send Feedback', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 trailing: const Icon(Icons.open_in_new, size: 16, color: Colors.grey),
-                onTap: _sendFeedback, // Wired to open an email!
+                onTap: _sendFeedback, 
               ),
               ListTile(
                 leading: const Icon(Icons.privacy_tip_outlined, color: AppColors.orange),
@@ -249,7 +330,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
               const Divider(height: 32),
 
-              // --- DANGER ZONE ---
               _buildSectionHeader('ACCOUNT', sectionColor),
               ListTile(
                 leading: const Icon(Icons.delete_forever, color: Colors.red),
@@ -259,11 +339,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               
               const SizedBox(height: 48),
               
-              // --- HIDDEN TRIGGER FOR EASTER EGG ---
               Center(
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: _handleSecretTap, // <-- Wired to the secret method!
+                  onTap: _handleSecretTap, 
                   child: Padding(
                     padding: const EdgeInsets.all(24.0),
                     child: Text(
@@ -279,17 +358,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
         ),
 
-        // --- INVISIBLE TOP LAYER: The Confetti Rain ---
         ConfettiWidget(
           confettiController: _confettiController,
-          blastDirection: 3.14 / 2, // 3.14/2 radians points straight down
+          blastDirection: 3.14 / 2, 
           maxBlastForce: 5,
           minBlastForce: 3,
           emissionFrequency: 0.04,
-          numberOfParticles: 80, // Creates a heavy downpour effect
+          numberOfParticles: 80, 
           gravity: 0.2,
           createParticlePath: (size) {
-            // Draw custom square "cash" paths instead of stars/circles
             final path = Path();
             path.addRect(Rect.fromLTWH(0, 0, size.width, size.height));
             return path;
@@ -316,9 +393,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // --- DELETE ACCOUNT LOGIC ---
   Future<void> _deleteAccount() async {
-    // 1. Show a warning dialog first!
     final bool? confirm = await showDialog<bool>(
       context: context,
       builder: (context) => AlertDialog(
@@ -329,11 +404,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context, false), // Cancel
+            onPressed: () => Navigator.pop(context, false), 
             child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
           ),
           TextButton(
-            onPressed: () => Navigator.pop(context, true), // Confirm
+            onPressed: () => Navigator.pop(context, true), 
             child: const Text('Delete', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
           ),
         ],
@@ -353,13 +428,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
       if (user != null) {
         await FirebaseFirestore.instance.collection('users').doc(user.uid).delete();
         await user.delete();
-        if (mounted) Navigator.pop(context);
+        if (mounted) {
+          Navigator.of(context).popUntil((route) => route.isFirst); 
+        }
         
       }
     } on FirebaseAuthException catch (e) {
       if (mounted) Navigator.pop(context);
       
-      // Firebase Security check:
       if (e.code == 'requires-recent-login') {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

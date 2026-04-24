@@ -290,12 +290,6 @@ class _TodayTab extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        if (activeOnDate.isEmpty)
-           const Padding(
-             padding: EdgeInsets.symmetric(vertical: 40),
-             child: Center(child: Text("No expenses logged on this date.", style: TextStyle(color: Colors.grey))),
-           ),
-
         ...displayCategories.asMap().entries.map((entry) {
           final cat = entry.value;
           final index = entry.key;

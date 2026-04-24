@@ -8,12 +8,6 @@ import '../models/diary_entry.dart';
 import '../models/direct_payment.dart';
 
 /// App-wide state.
-///
-/// Data layout matches the app's original design (top-level collections —
-/// groups/diaryCats/diaryEntries/directPayments). The ONLY change from the
-/// original is that listeners start/stop with the auth state, so in-memory
-/// data is cleared on logout and refreshed on login. This kills the stale-
-/// state bug without changing your data model.
 class AppProvider extends ChangeNotifier {
   final SharedPreferences _prefs;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -43,6 +37,7 @@ class AppProvider extends ChangeNotifier {
     _isDark = _prefs.getBool('isDark') ?? false;
     _hapticsEnabled = _prefs.getBool('haptics') ?? true;
     _currency = _prefs.getString('currency') ?? '₹';
+    _textSize = _prefs.getString('textSize') ?? 'M';
 
     _authSub = FirebaseAuth.instance.authStateChanges().listen(_onAuthChanged);
   }
@@ -110,6 +105,8 @@ class AppProvider extends ChangeNotifier {
   }
 
   // ================= PREFERENCES =================
+  String _textSize = 'M'; // 'XS', 'S', 'M', 'L', 'XL'
+
   void toggleDarkMode() {
     _isDark = !_isDark;
     _prefs.setBool('isDark', _isDark);
@@ -252,5 +249,24 @@ class AppProvider extends ChangeNotifier {
 
   void addDirectPayment(DirectPayment payment) {
     _db.collection('directPayments').doc(payment.id).set(payment.toJson());
+  }
+
+  String get textSize => _textSize;
+  
+  double get textScale {
+    switch (_textSize) {
+      case 'XS': return 0.8;
+      case 'S': return 0.9;
+      case 'L': return 1.1;
+      case 'XL': return 1.25;
+      case 'M':
+      default: return 1.0;
+    }
+  }
+
+  void setTextSize(String size) {
+    _textSize = size;
+    _prefs.setString('textSize', size);
+    notifyListeners();
   }
 }

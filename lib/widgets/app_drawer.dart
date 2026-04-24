@@ -101,15 +101,10 @@ class AppDrawer extends StatelessWidget {
                               child: CircleAvatar(
                                 radius: 30,
                                 backgroundColor: Colors.white,
-                                backgroundImage: (photoUrl != null &&
-                                        photoUrl.toString().isNotEmpty)
+                                // 👇 THE FIX: If there is no photoUrl, it loads the initials! 👇
+                                backgroundImage: (photoUrl != null && photoUrl.toString().isNotEmpty)
                                     ? NetworkImage(photoUrl)
-                                    : null,
-                                child: (photoUrl == null ||
-                                        photoUrl.toString().isEmpty)
-                                    ? const Icon(Icons.person,
-                                        size: 30, color: AppColors.orange)
-                                    : null,
+                                    : NetworkImage('https://ui-avatars.com/api/?name=${Uri.encodeComponent(name)}&background=F97316&color=fff&bold=true&size=200') as ImageProvider,
                               ),
                             ),
                             const SizedBox(width: 16),
