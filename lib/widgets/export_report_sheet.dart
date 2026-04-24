@@ -193,7 +193,7 @@ class _ExportReportSheetState extends State<ExportReportSheet> {
         children: [
           Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 24),
-          Text('Export Reports 📊', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: textColor, fontFamily: 'Nunito')),
+          Text('Export Reports 📊', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: textColor, fontFamily: 'Inter')),
           const SizedBox(height: 8),
           Text('Generate a clean summary of your transactions.', style: TextStyle(color: Colors.grey.shade500, fontSize: 14)),
           const SizedBox(height: 24),

@@ -4,14 +4,17 @@ import 'package:flutter/services.dart';
 import '../services/auth_service.dart';
 import '../utils/constants.dart';
 
-class PhoneLoginSheet extends StatefulWidget {
-  const PhoneLoginSheet({super.key});
+/// Bottom sheet for adding (linking) a phone number to an already-signed-in
+/// user. Similar to [PhoneLoginSheet] but uses linkWithCredential instead
+/// of signInWithCredential, so the user's account stays the same.
+class PhoneLinkSheet extends StatefulWidget {
+  const PhoneLinkSheet({super.key});
 
   @override
-  State<PhoneLoginSheet> createState() => _PhoneLoginSheetState();
+  State<PhoneLinkSheet> createState() => _PhoneLinkSheetState();
 }
 
-class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
+class _PhoneLinkSheetState extends State<PhoneLinkSheet> {
   final _phoneController = TextEditingController();
   final _otpController = TextEditingController();
 
@@ -21,10 +24,12 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
   bool _isOTPSent = false;
   String? _verificationId;
 
-  // Resend-OTP countdown (30 seconds after an OTP is sent).
   static const int _resendCooldownSeconds = 30;
   int _resendSecondsLeft = 0;
   Timer? _resendTimer;
+
+  final GlobalKey<ScaffoldMessengerState> _messengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   void _startResendCountdown() {
     _resendTimer?.cancel();
@@ -51,17 +56,10 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
     super.dispose();
   }
 
-  // ---------- ACTIONS ----------
-
   Future<void> _sendOTP() async {
-    // Dismiss the keyboard so errors/loading are clearly visible.
     FocusScope.of(context).unfocus();
-
     final rawPhone = _phoneController.text.trim();
 
-    // Format validation based on country code.
-    // For +91 India: exactly 10 digits, must start with 6/7/8/9.
-    // For other countries: minimum 7 digits (rough international standard).
     if (_selectedCountryCode == '+91') {
       if (rawPhone.length != 10) {
         _showError('Please enter exactly 10 digits');
@@ -71,15 +69,8 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
         _showError('Indian mobile numbers must start with 6, 7, 8 or 9');
         return;
       }
-    } else {
-      if (rawPhone.length < 7) {
-        _showError('Please enter a valid phone number');
-        return;
-      }
-    }
-
-    if (!RegExp(r'^\d+$').hasMatch(rawPhone)) {
-      _showError('Phone number can only contain digits');
+    } else if (rawPhone.length < 7) {
+      _showError('Please enter a valid phone number');
       return;
     }
 
@@ -108,12 +99,11 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
     );
   }
 
-  Future<void> _verifyOTP() async {
-    // Dismiss the keyboard so errors/loading are clearly visible.
+  Future<void> _verifyAndLink() async {
     FocusScope.of(context).unfocus();
-
     final smsCode = _otpController.text.trim();
-    if (smsCode.isEmpty || smsCode.length < 6) {
+
+    if (smsCode.length != 6) {
       _showError('Please enter the 6-digit code');
       return;
     }
@@ -125,7 +115,7 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
     setState(() => _isLoading = true);
     HapticFeedback.mediumImpact();
 
-    final result = await AuthService().verifyOTP(
+    final result = await AuthService().linkPhoneToCurrentUser(
       verificationId: _verificationId!,
       smsCode: smsCode,
     );
@@ -133,28 +123,17 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
     if (!mounted) return;
 
     if (result.isSuccess) {
-      Navigator.pop(context); // AuthGate takes over from here.
+      Navigator.pop(context, true); // Signal success to the caller.
       return;
     }
 
     setState(() => _isLoading = false);
     _otpController.clear();
-    _showError(result.errorMessage ?? 'Invalid code. Please try again.');
-  }
-
-  void _changeNumber() {
-    _resendTimer?.cancel();
-    setState(() {
-      _isOTPSent = false;
-      _verificationId = null;
-      _resendSecondsLeft = 0;
-      _otpController.clear();
-    });
+    _showError(result.errorMessage ?? 'Could not link phone. Please try again.');
   }
 
   Future<void> _resendOTP() async {
     if (_resendSecondsLeft > 0 || _isLoading) return;
-
     final rawPhone = _phoneController.text.trim();
     final fullPhoneNumber = '$_selectedCountryCode$rawPhone';
 
@@ -190,10 +169,15 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
     );
   }
 
-  // A GlobalKey on the local ScaffoldMessenger so _showError can reach it
-  // regardless of which context is available.
-  final GlobalKey<ScaffoldMessengerState> _messengerKey =
-      GlobalKey<ScaffoldMessengerState>();
+  void _changeNumber() {
+    _resendTimer?.cancel();
+    setState(() {
+      _isOTPSent = false;
+      _verificationId = null;
+      _resendSecondsLeft = 0;
+      _otpController.clear();
+    });
+  }
 
   void _showError(String message) {
     _messengerKey.currentState?.showSnackBar(
@@ -208,11 +192,8 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
     );
   }
 
-  // ---------- UI ----------
-
   @override
   Widget build(BuildContext context) {
-    // The sheet content, sized naturally by its children.
     final sheet = Container(
       decoration: const BoxDecoration(
         color: Colors.white,
@@ -228,135 +209,120 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
-          children: _buildSheetContents(),
+          children: _buildContents(),
         ),
       ),
     );
 
-    // Wrap in a local ScaffoldMessenger + Scaffold so SnackBars render on
-    // top of the sheet (in front of the OTP input), not behind it on the
-    // underlying Login screen. The Scaffold is sized to wrap content only
-    // by aligning it to the bottom inside the available space.
     return ScaffoldMessenger(
       key: _messengerKey,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         resizeToAvoidBottomInset: false,
-        body: Align(
-          alignment: Alignment.bottomCenter,
-          child: sheet,
-        ),
+        body: Align(alignment: Alignment.bottomCenter, child: sheet),
       ),
     );
   }
 
-  List<Widget> _buildSheetContents() {
+  List<Widget> _buildContents() {
     return [
-            // Drag handle
-            Center(
-              child: Container(
-                width: 40,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+      Center(
+        child: Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: Colors.grey.shade300,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+      ),
+      const SizedBox(height: 24),
+      Text(
+        _isOTPSent ? 'Enter the code 💬' : 'Add your phone number 📱',
+        style: const TextStyle(
+          fontFamily: 'Inter',
+          fontSize: 24,
+          fontWeight: FontWeight.w900,
+          color: Colors.black87,
+        ),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        _isOTPSent
+            ? 'We sent a 6-digit code to $_selectedCountryCode ${_phoneController.text}'
+            : 'We\'ll send an OTP to verify ownership. Once linked, this number cannot be changed.',
+        style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
+      ),
+      const SizedBox(height: 32),
+      if (!_isOTPSent) ...[
+        _buildPhoneField(),
+      ] else ...[
+        _buildOTPField(),
+        const SizedBox(height: 12),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            TextButton(
+              onPressed:
+                  (_resendSecondsLeft > 0 || _isLoading) ? null : _resendOTP,
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: Text(
+                _resendSecondsLeft > 0
+                    ? 'Resend in ${_resendSecondsLeft}s'
+                    : 'Resend OTP',
+                style: TextStyle(
+                  color: _resendSecondsLeft > 0
+                      ? Colors.grey.shade500
+                      : const Color(0xFFF97316),
+                  fontWeight: FontWeight.w700,
                 ),
               ),
             ),
-            const SizedBox(height: 24),
-
-            Text(
-              _isOTPSent ? 'Enter the code 💬' : 'What\'s your number? 📱',
-              style: const TextStyle(
-                fontFamily: 'Inter',
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: Colors.black87,
+            TextButton(
+              onPressed: _isLoading ? null : _changeNumber,
+              style: TextButton.styleFrom(
+                padding: EdgeInsets.zero,
+                minimumSize: const Size(0, 0),
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              ),
+              child: const Text(
+                'Change number',
+                style: TextStyle(
+                  color: Color(0xFFF97316),
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              _isOTPSent
-                  ? 'We sent a 6-digit code to $_selectedCountryCode ${_phoneController.text}'
-                  : 'We\'ll send you a 6-digit verification code.',
-              style: TextStyle(fontSize: 15, color: Colors.grey.shade600),
-            ),
-            const SizedBox(height: 32),
-
-            if (!_isOTPSent) ...[
-              _buildPhoneField(),
-            ] else ...[
-              _buildOTPField(),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Resend OTP with countdown
-                  TextButton(
-                    onPressed: (_resendSecondsLeft > 0 || _isLoading)
-                        ? null
-                        : _resendOTP,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: Text(
-                      _resendSecondsLeft > 0
-                          ? 'Resend in ${_resendSecondsLeft}s'
-                          : 'Resend OTP',
-                      style: TextStyle(
-                        color: _resendSecondsLeft > 0
-                            ? Colors.grey.shade500
-                            : const Color(0xFFF97316),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  // Change number
-                  TextButton(
-                    onPressed: _isLoading ? null : _changeNumber,
-                    style: TextButton.styleFrom(
-                      padding: EdgeInsets.zero,
-                      minimumSize: const Size(0, 0),
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    ),
-                    child: const Text(
-                      'Change number',
-                      style: TextStyle(
-                        color: Color(0xFFF97316),
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ],
+          ],
+        ),
+      ],
+      const SizedBox(height: 24),
+      _isLoading
+          ? const Center(
+              child: CircularProgressIndicator(color: Color(0xFFF97316)))
+          : ElevatedButton(
+              onPressed: _isOTPSent ? _verifyAndLink : _sendOTP,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFF97316),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                minimumSize: const Size(double.infinity, 54),
+                elevation: 0,
               ),
-            ],
-
-            const SizedBox(height: 24),
-
-            _isLoading
-                ? const Center(
-                    child: CircularProgressIndicator(color: Color(0xFFF97316)))
-                : ElevatedButton(
-                    onPressed: _isOTPSent ? _verifyOTP : _sendOTP,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFF97316),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
-                      minimumSize: const Size(double.infinity, 54),
-                      elevation: 0,
-                    ),
-                    child: Text(
-                      _isOTPSent ? 'Verify & Login →' : 'Send Code →',
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.white,
-                        fontFamily: 'Inter',
-                      ),
-                    ),
-                  ),
+              child: Text(
+                _isOTPSent ? 'Verify & Link →' : 'Send Code →',
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  fontFamily: 'Inter',
+                ),
+              ),
+            ),
     ];
   }
 
@@ -372,12 +338,12 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
       style: const TextStyle(
           color: Colors.black87, fontWeight: FontWeight.w700),
       decoration: InputDecoration(
-        hintText: 'Drop your Digits',
+        hintText: '98765 43210',
         hintStyle: TextStyle(
           color: Colors.grey.shade400,
           fontWeight: FontWeight.w400,
           fontSize: 15,
-          ),
+        ),
         filled: true,
         fillColor: Colors.grey.shade100,
         border: OutlineInputBorder(
@@ -442,10 +408,10 @@ class _PhoneLoginSheetState extends State<PhoneLoginSheet> {
         counterText: '',
         hintText: '000000',
         hintStyle: TextStyle(
-          color: Colors.grey.shade300,       // even lighter
-          fontWeight: FontWeight.w400,        // not bold
-          fontSize: 24,                       // matches input size
-          letterSpacing: 8,                   // matches spacing
+          color: Colors.grey.shade300,
+          fontWeight: FontWeight.w400,
+          fontSize: 24,
+          letterSpacing: 8,
         ),
         filled: true,
         fillColor: Colors.grey.shade100,

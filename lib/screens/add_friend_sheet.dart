@@ -128,7 +128,7 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
         children: [
           Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 16),
-          Text('Add to Network', style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
+          Text('Add to Network', style: TextStyle(fontFamily: 'Inter', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
           const SizedBox(height: 8),
           Text('Search by exact Email or Phone Number.', style: TextStyle(fontSize: 15, color: isDark ? AppColors.darkMuted : AppColors.muted)),
           const SizedBox(height: 24),
@@ -138,11 +138,11 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
               Expanded(
                 child: TextField(
                   controller: _searchController,
-                  style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+                  style: TextStyle(color: textColor, fontFamily: 'Inter', fontWeight: FontWeight.w700),
                   keyboardType: TextInputType.emailAddress, 
                   decoration: InputDecoration(
                     hintText: 'Email or Phone Number...',
-                    hintStyle: TextStyle(color: isDark ? AppColors.darkMuted : AppColors.muted),
+                    hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4)),
                     filled: true, fillColor: inputBg,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
@@ -207,7 +207,7 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
                 children: [
                   const Icon(Icons.perm_contact_calendar_rounded, color: AppColors.orange, size: 20),
                   const SizedBox(width: 8),
-                  Text('Choose from Contacts', style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w800, color: textColor)),
+                  Text('Choose from Contacts', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w800, color: textColor)),
                 ],
               ),
             ),
@@ -244,7 +244,7 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         // SAFE FALLBACK: Show 'Unknown User' instead of crashing
-                        Text(_foundUser!['name'] ?? 'Unknown User', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w800, color: textColor)),
+                        Text(_foundUser!['name'] ?? 'Unknown User', style: TextStyle(fontFamily: 'Inter', fontSize: 18, fontWeight: FontWeight.w800, color: textColor)),
                         Text(_foundUser!['email'] ?? _foundUser!['phone'] ?? '', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                       ],
                     ),
@@ -261,7 +261,7 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
                 child: Container(
                   width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(color: AppColors.success, borderRadius: BorderRadius.circular(14)),
-                  child: const Center(child: Text('Add to Network', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
+                  child: const Center(child: Text('Add to Network', style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
                 ),
               )
             else
@@ -270,7 +270,7 @@ class _AddFriendSheetState extends State<AddFriendSheet> {
                 child: Container(
                   width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-                  child: const Center(child: Text('Send SMS Invite ✉️', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
+                  child: const Center(child: Text('Send SMS Invite ✉️', style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
                 ),
               ),
           ]

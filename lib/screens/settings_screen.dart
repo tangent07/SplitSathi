@@ -1,3 +1,6 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:confetti/confetti.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/material.dart';
@@ -15,7 +18,6 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   // Local state for our notification/haptic toggles
-  bool _hapticsEnabled = true;
   bool _notifyNewExpense = true;
   bool _notifySettledUp = true;
   bool _notifyGroupInvites = true;
@@ -33,6 +35,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     // Initialize the confetti controller to drop for 5 seconds
     _confettiController = ConfettiController(duration: const Duration(seconds: 5));
+    _loadPreferences();
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      _notifyNewExpense = prefs.getBool('notifyNewExpense') ?? true;
+      _notifySettledUp = prefs.getBool('notifySettledUp') ?? true;
+      _notifyGroupInvites = prefs.getBool('notifyGroupInvites') ?? true;
+    });
   }
 
   @override
@@ -121,6 +133,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     
     // Grab the live currency from the provider!
     final currentCurrency = context.watch<AppProvider>().currency;
+    final isHapticsOn = context.watch<AppProvider>().hapticsEnabled;
 
     return Stack(
       alignment: Alignment.topCenter,
@@ -129,7 +142,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         Scaffold(
           backgroundColor: bg,
           appBar: AppBar(
-            title: const Text('Settings', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800)),
+            title: const Text('Settings', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800)),
             backgroundColor: AppColors.orange,
             foregroundColor: Colors.white,
             elevation: 0,
@@ -157,10 +170,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 secondary: const Icon(Icons.vibration, color: AppColors.orange),
                 title: Text('Haptic Feedback', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 subtitle: Text('Vibrations on button taps', style: TextStyle(fontSize: 12, color: sectionColor)),
-                value: _hapticsEnabled,
-                onChanged: (val) {
+                value: isHapticsOn,
+                onChanged: (val) async {
                   if (val) HapticFeedback.heavyImpact();
-                  setState(() => _hapticsEnabled = val);
+                  context.read<AppProvider>().setHaptics(val);
                 },
               ),
               
@@ -174,7 +187,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: Text('New Expenses', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 subtitle: Text('When someone adds a bill you owe', style: TextStyle(fontSize: 12, color: sectionColor)),
                 value: _notifyNewExpense,
-                onChanged: (val) => setState(() => _notifyNewExpense = val),
+                onChanged: (val) async {
+                  setState(() => _notifyNewExpense = val);
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('notifyNewExpense', val);
+                },
               ),
               SwitchListTile(
                 activeColor: AppColors.orange,
@@ -182,7 +199,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: Text('Settlements', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 subtitle: Text('When someone pays you back', style: TextStyle(fontSize: 12, color: sectionColor)),
                 value: _notifySettledUp,
-                onChanged: (val) => setState(() => _notifySettledUp = val),
+                onChanged: (val) async {
+                  setState(() => _notifySettledUp = val);
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('notifySettledUp', val);
+                },
               ),
               SwitchListTile(
                 activeColor: AppColors.orange,
@@ -190,7 +211,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 title: Text('Group Invites', style: TextStyle(color: textColor, fontWeight: FontWeight.w600)),
                 subtitle: Text('When you are added to a new group', style: TextStyle(fontSize: 12, color: sectionColor)),
                 value: _notifyGroupInvites,
-                onChanged: (val) => setState(() => _notifyGroupInvites = val),
+                onChanged: (val) async {
+                  setState(() => _notifyGroupInvites = val);
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setBool('notifyGroupInvites', val);
+                },
               ),
 
               const Divider(height: 32),
@@ -229,11 +254,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ListTile(
                 leading: const Icon(Icons.delete_forever, color: Colors.red),
                 title: const Text('Delete Account', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
-                onTap: () {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Delete Account logic coming soon!'), backgroundColor: Colors.red),
-                  );
-                },
+                onTap: _deleteAccount,
               ),
               
               const SizedBox(height: 48),
@@ -285,7 +306,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       child: Text(
         title,
         style: TextStyle(
-          fontFamily: 'Nunito',
+          fontFamily: 'Inter',
           fontSize: 12,
           fontWeight: FontWeight.w900,
           color: color,
@@ -293,5 +314,67 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ),
     );
+  }
+
+  // --- DELETE ACCOUNT LOGIC ---
+  Future<void> _deleteAccount() async {
+    // 1. Show a warning dialog first!
+    final bool? confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Account?'),
+        content: const Text(
+          'This action cannot be undone. All your personal data and settings will be permanently erased.',
+        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false), // Cancel
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true), // Confirm
+            child: const Text('Delete', style: TextStyle(color: Colors.red, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(child: CircularProgressIndicator(color: AppColors.orange)),
+      );
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await FirebaseFirestore.instance.collection('users').doc(user.uid).delete();
+        await user.delete();
+        if (mounted) Navigator.pop(context);
+        
+      }
+    } on FirebaseAuthException catch (e) {
+      if (mounted) Navigator.pop(context);
+      
+      // Firebase Security check:
+      if (e.code == 'requires-recent-login') {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Security check: Please log out and log back in before deleting your account.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      } else {
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: ${e.message}')));
+      }
+    } catch (e) {
+      if (mounted) Navigator.pop(context);
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('An error occurred: $e')));
+    }
   }
 }

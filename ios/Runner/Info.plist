@@ -75,6 +75,6 @@
 		<key>UIStatusBarHidden</key>
 		<false/>
 		<key>NSContactsUsageDescription</key>
-          <string>SplitSathi needs access to your contacts so you can easily find friends to split bills with.</string>
+		<string>SplitSathi needs access to your contacts so you can easily find friends to split bills with.</string>
 	</dict>
 </plist>

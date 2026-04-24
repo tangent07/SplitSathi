@@ -71,7 +71,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   void _toast(String msg) {
     ScaffoldMessenger.of(context).clearSnackBars();
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
+      content: Text(msg, style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700)),
       backgroundColor: AppColors.orange,
       duration: const Duration(seconds: 2),
       behavior: SnackBarBehavior.floating,
@@ -130,7 +130,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             const SizedBox(height: 16),
 
             Text('Add Expense', style: TextStyle(
-              fontFamily: 'Nunito', fontSize: 22,
+              fontFamily: 'Inter', fontSize: 22,
               fontWeight: FontWeight.w900, color: textColor,
             )),
             const SizedBox(height: 20),
@@ -167,7 +167,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
             const SizedBox(height: 8),
             TextField(
               controller: _nameController,
-              style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+              style: TextStyle(color: textColor, fontFamily: 'Inter', fontWeight: FontWeight.w700),
               decoration: InputDecoration(
                 hintText: 'e.g. Dinner, Hotel, Cab...',
                 hintStyle: TextStyle(
@@ -207,7 +207,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                 child: Row(
                   children: [
                     Text(currency, style: const TextStyle( // <-- UPDATED DYNAMIC CURRENCY
-                      fontFamily: 'Nunito',
+                      fontFamily: 'Inter',
                       fontWeight: FontWeight.w900,
                       fontSize: 20,
                       color: AppColors.orange,
@@ -217,7 +217,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                       child: Text(
                         _amountController.text.isEmpty ? 'Enter amount' : _amountController.text,
                         style: TextStyle(
-                          fontFamily: 'Nunito',
+                          fontFamily: 'Inter',
                           fontWeight: FontWeight.w800,
                           fontSize: 16,
                           color: _amountController.text.isEmpty
@@ -253,7 +253,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                   isExpanded: true,
                   dropdownColor: isDark ? AppColors.darkSurface2 : Colors.white,
                   style: TextStyle(
-                    fontFamily: 'Nunito',
+                    fontFamily: 'Inter',
                     fontWeight: FontWeight.w700,
                     color: textColor,
                     fontSize: 15,
@@ -289,7 +289,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                       ),
                     ),
                     child: Text(m, style: TextStyle(
-                      fontFamily: 'Nunito',
+                      fontFamily: 'Inter',
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                       color: selected ? AppColors.orange : textColor,
@@ -313,7 +313,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                     const Icon(Icons.error_outline, color: AppColors.error, size: 16),
                     const SizedBox(width: 8),
                     Text(_error!, style: const TextStyle(
-                      fontFamily: 'Nunito', fontWeight: FontWeight.w700,
+                      fontFamily: 'Inter', fontWeight: FontWeight.w700,
                       fontSize: 13, color: AppColors.error,
                     )),
                   ],
@@ -333,7 +333,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
                 ),
                 child: const Center(child: Text('Save Expense →',
                   style: TextStyle(
-                    fontFamily: 'Nunito', fontSize: 16,
+                    fontFamily: 'Inter', fontSize: 16,
                     fontWeight: FontWeight.w800, color: Colors.white,
                   ))),
               ),
@@ -345,7 +345,7 @@ class _AddExpenseSheetState extends State<AddExpenseSheet> {
   }
 
   Widget _label(String text) => Text(text, style: const TextStyle(
-    fontFamily: 'Nunito', fontSize: 12,
+    fontFamily: 'Inter', fontSize: 12,
     fontWeight: FontWeight.w800,
     color: AppColors.orange, letterSpacing: 0.5,
   ));
@@ -421,12 +421,12 @@ class _NumpadSheetState extends State<_NumpadSheet> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(currency, style: const TextStyle( // <-- UPDATED DYNAMIC CURRENCY
-                fontFamily: 'Nunito', fontSize: 36,
+                fontFamily: 'Inter', fontSize: 36,
                 fontWeight: FontWeight.w900, color: AppColors.orange,
               )),
               const SizedBox(width: 4),
               Text(_value, style: TextStyle(
-                fontFamily: 'Nunito', fontSize: 48,
+                fontFamily: 'Inter', fontSize: 48,
                 fontWeight: FontWeight.w900, color: textColor,
               )),
             ],
@@ -465,7 +465,7 @@ class _NumpadSheetState extends State<_NumpadSheet> {
               ),
               child: const Center(child: Text('Done ✓',
                 style: TextStyle(
-                  fontFamily: 'Nunito', fontSize: 17,
+                  fontFamily: 'Inter', fontSize: 17,
                   fontWeight: FontWeight.w800, color: Colors.white,
                 ))),
             ),
@@ -488,7 +488,7 @@ class _NumpadSheetState extends State<_NumpadSheet> {
           border: Border.all(color: border, width: 1.5),
         ),
         child: Center(child: Text(label, style: TextStyle(
-          fontFamily: 'Nunito', fontSize: 22,
+          fontFamily: 'Inter', fontSize: 22,
           fontWeight: FontWeight.w800, color: textColor,
         ))),
       ),

@@ -172,7 +172,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                             children: [
                               Icon(Icons.arrow_back, color: AppColors.orange, size: 18),
                               const SizedBox(width: 4),
-                              Text('Back', style: TextStyle(color: AppColors.orange, fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 14)),
+                              Text('Back', style: TextStyle(color: AppColors.orange, fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 14)),
                             ],
                           ),
                         ),
@@ -227,7 +227,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(group.name, style: TextStyle(fontFamily: 'Nunito', fontSize: 24, fontWeight: FontWeight.w900, color: textColor)),
+                          Text(group.name, style: TextStyle(fontFamily: 'Inter', fontSize: 24, fontWeight: FontWeight.w900, color: textColor)),
                           Text('${group.members.length} members', style: TextStyle(fontSize: 13, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                         ],
                       ),
@@ -255,7 +255,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       dividerColor: Colors.transparent,
                       labelColor: AppColors.orange,
                       unselectedLabelColor: isDark ? AppColors.darkMuted : AppColors.muted,
-                      labelStyle: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 13),
+                      labelStyle: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, fontSize: 13),
                       tabs: const [Tab(text: 'Expenses'), Tab(text: 'Balances'), Tab(text: 'Settle Up')],
                     ),
                   ),
@@ -277,7 +277,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          HapticFeedback.mediumImpact();
+          if (context.read<AppProvider>().hapticsEnabled) {
+            HapticFeedback.mediumImpact(); 
+          }
           showModalBottomSheet(
             context: context,
             isScrollControlled: true,
@@ -299,9 +301,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(label, style: const TextStyle(fontFamily: 'Nunito', fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)),
+          Text(label, style: const TextStyle(fontFamily: 'Inter', fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)),
           const SizedBox(height: 6),
-          Text(amount, style: TextStyle(fontFamily: 'Nunito', fontSize: 26, fontWeight: FontWeight.w900, color: amountColor)),
+          Text(amount, style: TextStyle(fontFamily: 'Inter', fontSize: 26, fontWeight: FontWeight.w900, color: amountColor)),
         ],
       ),
     );
@@ -315,7 +317,7 @@ void _confirmDeleteGroup(BuildContext context, Group group, bool isDark) {
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Delete "${group.name}"?', style: const TextStyle(
-          fontFamily: 'Nunito', fontWeight: FontWeight.w900,
+          fontFamily: 'Inter', fontWeight: FontWeight.w900,
         )),
         content: const Text('This will permanently delete the group and all its expenses. This cannot be undone.'),
         actions: [
@@ -359,7 +361,7 @@ class _ExpensesTab extends StatelessWidget {
           children: [
             const Text('💸', style: TextStyle(fontSize: 48)),
             const SizedBox(height: 16),
-            Text('No expenses yet', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w800, color: isDark ? Colors.white : const Color(0xFF1C1C1C))),
+            Text('No expenses yet', style: TextStyle(fontFamily: 'Inter', fontSize: 18, fontWeight: FontWeight.w800, color: isDark ? Colors.white : const Color(0xFF1C1C1C))),
             const SizedBox(height: 8),
             Text('Tap + to add the first expense', style: TextStyle(fontSize: 14, color: isDark ? AppColors.darkMuted : AppColors.muted)),
           ],
@@ -438,7 +440,7 @@ class _ExpensesTab extends StatelessWidget {
                     children: [
                       Icon(Icons.delete_outline, color: AppColors.error, size: 24),
                       SizedBox(height: 4),
-                      Text('Delete', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 11, color: AppColors.error)),
+                      Text('Delete', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 11, color: AppColors.error)),
                     ],
                   ),
                 ),
@@ -460,7 +462,7 @@ class _ExpensesTab extends StatelessWidget {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Text(exp.name, style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w800, color: isDark ? Colors.white : const Color(0xFF1C1C1C))),
+                              Text(exp.name, style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w800, color: isDark ? Colors.white : const Color(0xFF1C1C1C))),
                               Text('Paid by ${exp.paidBy} · ${exp.splitAmong.length} people', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                             ],
                           ),
@@ -468,7 +470,7 @@ class _ExpensesTab extends StatelessWidget {
                         Column(
                           crossAxisAlignment: CrossAxisAlignment.end,
                           children: [
-                            Text('$currency${exp.amount.round()}', style: const TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.orange)),
+                            Text('$currency${exp.amount.round()}', style: const TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w900, color: AppColors.orange)),
                             Text('$currency${(exp.amount / exp.splitAmong.length).round()}/person', style: TextStyle(fontSize: 11, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                             Text(DateFormat('hh:mm a').format(exp.date), style: TextStyle(fontSize: 10, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                           ],
@@ -490,7 +492,7 @@ class _ExpensesTab extends StatelessWidget {
       builder: (_) => AlertDialog(
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: Text('Delete "${exp.name}"?', style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900)),
+        title: Text('Delete "${exp.name}"?', style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900)),
         content: const Text("This can't be undone. A ghost record will remain."),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancel', style: TextStyle(color: AppColors.muted))),
@@ -503,7 +505,9 @@ class _ExpensesTab extends StatelessWidget {
     );
     if (result == true) {
       await DatabaseService().deleteExpense(group.id, exp.id); 
-      HapticFeedback.mediumImpact();
+      if (context.read<AppProvider>().hapticsEnabled) {
+        HapticFeedback.mediumImpact(); 
+      }
     }
     return false; 
   }
@@ -553,11 +557,11 @@ class _BalancesTab extends StatelessWidget {
               Container(
                 width: 40, height: 40,
                 decoration: BoxDecoration(color: AppConstants.getAvatarColor(i), borderRadius: BorderRadius.circular(12)),
-                child: Center(child: Text(m[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white))),
+                child: Center(child: Text(m[0].toUpperCase(), style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, color: Colors.white))),
               ),
               const SizedBox(width: 12),
-              Expanded(child: Text(m, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 15, color: isDark ? Colors.white : const Color(0xFF1C1C1C)))),
-              Text(label, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 14, color: color)),
+              Expanded(child: Text(m, style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, fontSize: 15, color: isDark ? Colors.white : const Color(0xFF1C1C1C)))),
+              Text(label, style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 14, color: color)),
             ],
           ),
         );
@@ -603,7 +607,9 @@ class _SettleUpTabState extends State<_SettleUpTab> {
 
     if (mounted) {
       setState(() => _settling.remove(i)); 
-      HapticFeedback.mediumImpact();
+      if (context.read<AppProvider>().hapticsEnabled) {
+        HapticFeedback.mediumImpact(); 
+      }
       _showToast('Fully settled! ✅');
     }
   }
@@ -627,13 +633,17 @@ class _SettleUpTabState extends State<_SettleUpTab> {
     if (mounted) {
       setState(() => _showPartial[i] = false);
       ctrl?.clear();
-      HapticFeedback.mediumImpact();
+      if (context.read<AppProvider>().hapticsEnabled) {
+        HapticFeedback.mediumImpact(); 
+      }
       _showToast('$currency${partial.round()} recorded! 🔄');
     }
   }
 
   Future<void> _handleSettleUp(String friendName, double amount) async {
-    HapticFeedback.mediumImpact();
+    if (context.read<AppProvider>().hapticsEnabled) {
+      HapticFeedback.mediumImpact(); 
+    }
     showDialog(context: context, barrierDismissible: false, builder: (_) => const Center(child: CircularProgressIndicator(color: AppColors.orange)));
 
     try {
@@ -663,7 +673,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
 
   void _showToast(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
+      content: Text(msg, style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700)),
       backgroundColor: AppColors.orange,
       duration: const Duration(seconds: 2),
       behavior: SnackBarBehavior.floating,
@@ -714,7 +724,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
           children: [
             const Text('🎉', style: TextStyle(fontSize: 48)),
             const SizedBox(height: 16),
-            Text('All Settled!', style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w900, color: widget.isDark ? Colors.white : const Color(0xFF1C1C1C))),
+            Text('All Settled!', style: TextStyle(fontFamily: 'Inter', fontSize: 22, fontWeight: FontWeight.w900, color: widget.isDark ? Colors.white : const Color(0xFF1C1C1C))),
             const SizedBox(height: 8),
             Text('No pending dues in this group', style: TextStyle(fontSize: 14, color: widget.isDark ? AppColors.darkMuted : AppColors.muted)),
           ],
@@ -742,7 +752,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                   children: [
                     Icon(Icons.chat_bubble, color: Colors.white, size: 20),
                     SizedBox(width: 10),
-                    Text('Send Reminder on WhatsApp', style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
+                    Text('Send Reminder on WhatsApp', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w800, color: Colors.white)),
                   ],
                 ),
               ),
@@ -775,11 +785,11 @@ class _SettleUpTabState extends State<_SettleUpTab> {
               children: [
                 Row(
                   children: [
-                    Container(width: 40, height: 40, decoration: BoxDecoration(color: AppConstants.getAvatarColor(fromIdx), borderRadius: BorderRadius.circular(12)), child: Center(child: Text((t['from'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white)))),
+                    Container(width: 40, height: 40, decoration: BoxDecoration(color: AppConstants.getAvatarColor(fromIdx), borderRadius: BorderRadius.circular(12)), child: Center(child: Text((t['from'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, color: Colors.white)))),
                     const SizedBox(width: 8), const Icon(Icons.arrow_forward, color: AppColors.orange, size: 18), const SizedBox(width: 8),
-                    Container(width: 40, height: 40, decoration: BoxDecoration(color: AppConstants.getAvatarColor(toIdx), borderRadius: BorderRadius.circular(12)), child: Center(child: Text((t['to'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white)))),
+                    Container(width: 40, height: 40, decoration: BoxDecoration(color: AppConstants.getAvatarColor(toIdx), borderRadius: BorderRadius.circular(12)), child: Center(child: Text((t['to'] as String)[0].toUpperCase(), style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, color: Colors.white)))),
                     const SizedBox(width: 12),
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${t['from']} → ${t['to']}', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 14, color: textColor)), Text('$currency$amount', style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange))])),
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text('${t['from']} → ${t['to']}', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, fontSize: 14, color: textColor)), Text('$currency$amount', style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 18, color: AppColors.orange))])),
                     Column(
                       children: [
                         // TOP BUTTON: Settle / Pay
@@ -807,8 +817,8 @@ class _SettleUpTabState extends State<_SettleUpTab> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Expanded(child: GestureDetector(onTap: () => _openNumpadForPartial(i), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: widget.isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.orange)), child: Row(children: [Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, color: AppColors.orange, fontSize: 16)), const SizedBox(width: 6), Text(ctrl.text.isEmpty ? 'Enter amount' : ctrl.text, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, color: ctrl.text.isEmpty ? (widget.isDark ? AppColors.darkMuted : AppColors.muted) : textColor))])))),
-                      const SizedBox(width: 8), GestureDetector(onTap: () => _markPartialSettled(i, currency), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(10)), child: const Text('Confirm', style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13)))),
+                      Expanded(child: GestureDetector(onTap: () => _openNumpadForPartial(i), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: widget.isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(10), border: Border.all(color: AppColors.orange)), child: Row(children: [Text(currency, style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, color: AppColors.orange, fontSize: 16)), const SizedBox(width: 6), Text(ctrl.text.isEmpty ? 'Enter amount' : ctrl.text, style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, color: ctrl.text.isEmpty ? (widget.isDark ? AppColors.darkMuted : AppColors.muted) : textColor))])))),
+                      const SizedBox(width: 8), GestureDetector(onTap: () => _markPartialSettled(i, currency), child: Container(padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12), decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(10)), child: const Text('Confirm', style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13)))),
                       const SizedBox(width: 8), GestureDetector(onTap: () => setState(() => _showPartial[i] = false), child: Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: widget.isDark ? AppColors.darkSurface2 : AppColors.peach, borderRadius: BorderRadius.circular(10), border: Border.all(color: borderColor)), child: const Icon(Icons.close, size: 16, color: AppColors.muted))),
                     ],
                   ),
@@ -841,7 +851,7 @@ class _SettleUpTabState extends State<_SettleUpTab> {
             label, 
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontFamily: 'Nunito', 
+              fontFamily: 'Inter', 
               fontWeight: FontWeight.w800, 
               fontSize: 12, 
               color: effectiveColor
@@ -909,9 +919,9 @@ class _PartialNumpadState extends State<_PartialNumpad> {
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.orange)),
+              Text(currency, style: const TextStyle(fontFamily: 'Inter', fontSize: 36, fontWeight: FontWeight.w900, color: AppColors.orange)),
               const SizedBox(width: 4),
-              Text(_value, style: TextStyle(fontFamily: 'Nunito', fontSize: 48, fontWeight: FontWeight.w900, color: textColor)),
+              Text(_value, style: TextStyle(fontFamily: 'Inter', fontSize: 48, fontWeight: FontWeight.w900, color: textColor)),
             ],
           ),
           const SizedBox(height: 16),
@@ -928,7 +938,7 @@ class _PartialNumpadState extends State<_PartialNumpad> {
             child: Container(
               width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16),
               decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-              child: const Center(child: Text('Done ✓', style: TextStyle(fontFamily: 'Nunito', fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
+              child: const Center(child: Text('Done ✓', style: TextStyle(fontFamily: 'Inter', fontSize: 17, fontWeight: FontWeight.w800, color: Colors.white))),
             ),
           ),
         ],
@@ -941,7 +951,7 @@ class _PartialNumpadState extends State<_PartialNumpad> {
       onTap: () { HapticFeedback.selectionClick(); onTap(); },
       child: Container(
         decoration: BoxDecoration(color: bg, borderRadius: BorderRadius.circular(12), border: Border.all(color: border, width: 1.5)),
-        child: Center(child: Text(label, style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w800, color: color))),
+        child: Center(child: Text(label, style: TextStyle(fontFamily: 'Inter', fontSize: 22, fontWeight: FontWeight.w800, color: color))),
       ),
     );
   }
@@ -995,7 +1005,9 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
 
     await DatabaseService().updateExpense(widget.groupId, widget.expense.id, name, amount, _paidBy, _splitAmong, _selectedCategory);
     if (!mounted) return;
-    HapticFeedback.mediumImpact();
+    if (context.read<AppProvider>().hapticsEnabled) {
+      HapticFeedback.mediumImpact(); 
+    }
     Navigator.pop(context);
   }
 
@@ -1027,7 +1039,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
           children: [
             Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)))),
             const SizedBox(height: 16),
-            Text('Edit Expense', style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
+            Text('Edit Expense', style: TextStyle(fontFamily: 'Inter', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
             const SizedBox(height: 20),
             _label('CATEGORY'),
             const SizedBox(height: 8),
@@ -1049,7 +1061,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
             _label('DESCRIPTION'),
             const SizedBox(height: 8),
             TextField(
-              controller: _nameController, style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+              controller: _nameController, style: TextStyle(color: textColor, fontFamily: 'Inter', fontWeight: FontWeight.w700),
               decoration: InputDecoration(filled: true, fillColor: inputBg, border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)), focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5))),
             ),
             const SizedBox(height: 16),
@@ -1062,9 +1074,9 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
                 decoration: BoxDecoration(color: inputBg, borderRadius: BorderRadius.circular(12), border: Border.all(color: borderColor)),
                 child: Row(
                   children: [
-                    Text(currency, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.orange)),
+                    Text(currency, style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w900, fontSize: 20, color: AppColors.orange)),
                     const SizedBox(width: 8),
-                    Expanded(child: Text(_amountController.text.isEmpty ? 'Enter amount' : _amountController.text, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 16, color: textColor))),
+                    Expanded(child: Text(_amountController.text.isEmpty ? 'Enter amount' : _amountController.text, style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, fontSize: 16, color: textColor))),
                     if (_splitAmong.isNotEmpty && (double.tryParse(_amountController.text) ?? 0) > 0)
                       Text('$currency${share.round()}/person', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                   ],
@@ -1080,7 +1092,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String>(
                   value: _paidBy, isExpanded: true, dropdownColor: isDark ? AppColors.darkSurface2 : Colors.white,
-                  style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, color: textColor, fontSize: 15),
+                  style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, color: textColor, fontSize: 15),
                   items: widget.members.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
                   onChanged: (val) => setState(() => _paidBy = val!),
                 ),
@@ -1098,7 +1110,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                     decoration: BoxDecoration(color: selected ? AppColors.orange.withOpacity(0.15) : inputBg, borderRadius: BorderRadius.circular(20), border: Border.all(color: selected ? AppColors.orange : borderColor)),
-                    child: Text(m, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 13, color: selected ? AppColors.orange : textColor)),
+                    child: Text(m, style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 13, color: selected ? AppColors.orange : textColor)),
                   ),
                 );
               }).toList(),
@@ -1112,7 +1124,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
                   children: [
                     const Icon(Icons.error_outline, color: AppColors.error, size: 16),
                     const SizedBox(width: 8),
-                    Text(_error!, style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.error)),
+                    Text(_error!, style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700, fontSize: 13, color: AppColors.error)),
                   ],
                 ),
               ),
@@ -1123,7 +1135,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
               child: Container(
                 width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16),
                 decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(14)),
-                child: const Center(child: Text('Save Changes →', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
+                child: const Center(child: Text('Save Changes →', style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))),
               ),
             ),
           ],
@@ -1131,7 +1143,7 @@ class _EditExpenseSheetState extends State<_EditExpenseSheet> {
       ),
     );
   }
-  Widget _label(String text) => Text(text, style: const TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5));
+  Widget _label(String text) => Text(text, style: const TextStyle(fontFamily: 'Inter', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5));
 }
 
 // ── ADD FRIEND TO GROUP SHEET ──────────────────────────────────────
@@ -1168,7 +1180,7 @@ class _AddGroupMemberSheetState extends State<_AddGroupMemberSheet> {
     if (context.mounted) {
       Navigator.pop(context); 
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('$newMemberName added to group! ✅', style: const TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w700)),
+        content: Text('$newMemberName added to group! ✅', style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700)),
         backgroundColor: AppColors.success,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -1194,14 +1206,14 @@ class _AddGroupMemberSheetState extends State<_AddGroupMemberSheet> {
         children: [
           Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: borderColor, borderRadius: BorderRadius.circular(2)))),
           const SizedBox(height: 16),
-          Text('Add Friend to Group', style: TextStyle(fontFamily: 'Nunito', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
+          Text('Add Friend to Group', style: TextStyle(fontFamily: 'Inter', fontSize: 22, fontWeight: FontWeight.w900, color: textColor)),
           const SizedBox(height: 16),
 
           // 1. REAL SEARCH BAR
           TextField(
             controller: _searchController,
             onChanged: (val) => setState(() => _searchQuery = val.toLowerCase()),
-            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+            style: TextStyle(color: textColor, fontFamily: 'Inter', fontWeight: FontWeight.w700),
             decoration: InputDecoration(
               hintText: 'Search friends in your network...',
               hintStyle: TextStyle(color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.5)),
@@ -1229,7 +1241,7 @@ class _AddGroupMemberSheetState extends State<_AddGroupMemberSheet> {
                 children: [
                   Icon(Icons.person_add_alt_1, color: AppColors.orange, size: 20),
                   SizedBox(width: 12),
-                  Text('Add friend to your network...', style: TextStyle(fontFamily: 'Nunito', fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.orange)),
+                  Text('Add friend to your network...', style: TextStyle(fontFamily: 'Inter', fontSize: 14, fontWeight: FontWeight.w800, color: AppColors.orange)),
                 ],
               ),
             ),
@@ -1274,11 +1286,13 @@ class _AddGroupMemberSheetState extends State<_AddGroupMemberSheet> {
                         backgroundColor: AppColors.orange.withOpacity(0.2),
                         child: Text(friendName.isNotEmpty ? friendName[0].toUpperCase() : '?', style: const TextStyle(color: AppColors.orange, fontWeight: FontWeight.w800)),
                       ),
-                      title: Text(friendName, style: TextStyle(fontFamily: 'Nunito', fontWeight: FontWeight.w800, color: textColor)),
+                      title: Text(friendName, style: TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w800, color: textColor)),
                       subtitle: Text(friendData['email'] ?? friendData['phone'] ?? '', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                       trailing: const Icon(Icons.add_circle_outline, color: AppColors.orange),
                       onTap: () {
-                        HapticFeedback.mediumImpact();
+                        if (context.read<AppProvider>().hapticsEnabled) {
+                          HapticFeedback.mediumImpact(); 
+                        }
                         _addMember(context, friendName);
                       },
                     );

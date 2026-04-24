@@ -37,7 +37,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('Link UPI ID', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Nunito')),
+            const Text('Link UPI ID', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, fontFamily: 'Inter')),
             const SizedBox(height: 8),
             Text('Friends will see this when they settle up with you.', style: TextStyle(color: Colors.grey.shade500, fontSize: 14)),
             const SizedBox(height: 24),
@@ -93,7 +93,7 @@ class _PaymentMethodsScreenState extends State<PaymentMethodsScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.orange, size: 20), onPressed: () => Navigator.pop(context)),
-        title: const Text('Payment Methods', style: TextStyle(color: AppColors.orange, fontWeight: FontWeight.w900, fontFamily: 'Nunito')),
+        title: const Text('Payment Methods', style: TextStyle(color: AppColors.orange, fontWeight: FontWeight.w900, fontFamily: 'Inter')),
         centerTitle: true,
       ),
       body: StreamBuilder<DocumentSnapshot>(

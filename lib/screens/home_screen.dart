@@ -172,7 +172,7 @@ class HomeScreen extends StatelessWidget {
       children: [
         Text(label, style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.55), letterSpacing: 1, fontWeight: FontWeight.w700)),
         const SizedBox(height: 3),
-        Text(value, style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w900, color: color)),
+        Text(value, style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w900, color: color)),
       ],
     );
   }
@@ -243,7 +243,7 @@ class HomeScreen extends StatelessWidget {
           child: Text(
             label,
             style: const TextStyle(
-              fontFamily: 'Nunito',
+              fontFamily: 'Inter',
               fontSize: 15,
               fontWeight: FontWeight.w800,
               color: Colors.white,
@@ -266,7 +266,7 @@ class HomeScreen extends StatelessWidget {
             child: Text(
               'YOUR GROUPS',
               style: TextStyle(
-                fontFamily: 'Nunito',
+                fontFamily: 'Inter',
                 fontSize: 13,
                 fontWeight: FontWeight.w800,
                 color: AppColors.orange,
@@ -323,7 +323,7 @@ class HomeScreen extends StatelessWidget {
                         title: Text(
                           name,
                           style: TextStyle(
-                            fontFamily: 'Nunito',
+                            fontFamily: 'Inter',
                             fontWeight: FontWeight.w800,
                             fontSize: 17,
                             color: isDark ? Colors.white : const Color(0xFF1C1C1C),
@@ -334,7 +334,7 @@ class HomeScreen extends StatelessWidget {
                           child: Text(
                             '${members.length} members',
                             style: TextStyle(
-                              fontFamily: 'Nunito',
+                              fontFamily: 'Inter',
                               fontWeight: FontWeight.w600,
                               fontSize: 13,
                               color: isDark ? AppColors.darkMuted : AppColors.muted,
@@ -451,7 +451,7 @@ class HomeScreen extends StatelessWidget {
                   Text(
                     group.name,
                     style: TextStyle(
-                      fontFamily: 'Nunito',
+                      fontFamily: 'Inter',
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
                       color: isDark ? Colors.white : const Color(0xFF1C1C1C),
@@ -484,7 +484,7 @@ class HomeScreen extends StatelessWidget {
                 Text(
                   balanceText,
                   style: TextStyle(
-                    fontFamily: 'Nunito',
+                    fontFamily: 'Inter',
                     fontSize: 15,
                     fontWeight: FontWeight.w900,
                     color: balanceColor,
@@ -509,7 +509,7 @@ class HomeScreen extends StatelessWidget {
             Text(
               'No groups yet',
               style: TextStyle(
-                fontFamily: 'Nunito',
+                fontFamily: 'Inter',
                 fontSize: 18,
                 fontWeight: FontWeight.w800,
                 color: isDark ? Colors.white : const Color(0xFF1C1C1C),
@@ -563,7 +563,7 @@ class HomeScreen extends StatelessWidget {
                 Text(group.emoji, style: const TextStyle(fontSize: 20)),
                 const SizedBox(width: 8),
                 Text(group.name, style: TextStyle(
-                  fontFamily: 'Nunito', fontSize: 16,
+                  fontFamily: 'Inter', fontSize: 16,
                   fontWeight: FontWeight.w900, color: AppColors.orange,
                 )),
               ],
@@ -626,7 +626,7 @@ class HomeScreen extends StatelessWidget {
             Text(emoji, style: const TextStyle(fontSize: 20)),
             const SizedBox(width: 16),
             Text(label, style: TextStyle(
-              fontFamily: 'Nunito', fontWeight: FontWeight.w700,
+              fontFamily: 'Inter', fontWeight: FontWeight.w700,
               fontSize: 16, color: color,
             )),
           ],
@@ -651,7 +651,7 @@ class HomeScreen extends StatelessWidget {
         backgroundColor: isDark ? AppColors.darkSurface : Colors.white,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Text('Delete "${group.name}"?', style: const TextStyle(
-          fontFamily: 'Nunito', fontWeight: FontWeight.w900,
+          fontFamily: 'Inter', fontWeight: FontWeight.w900,
         )),
         content: const Text('This will permanently delete the group and all its expenses.'),
         actions: [
@@ -793,7 +793,7 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
           )),
           const SizedBox(height: 16),
           Text('Edit Group', style: TextStyle(
-            fontFamily: 'Nunito', fontSize: 22,
+            fontFamily: 'Inter', fontSize: 22,
             fontWeight: FontWeight.w900, color: textColor,
           )),
           const SizedBox(height: 20),
@@ -803,7 +803,7 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
           const SizedBox(height: 8),
           TextField(
             controller: _nameController,
-            style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w700),
+            style: TextStyle(color: textColor, fontFamily: 'Inter', fontWeight: FontWeight.w700),
             decoration: InputDecoration(
               filled: true, fillColor: inputBg,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: borderColor)),
@@ -862,7 +862,7 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
                 children: [
                   Icon(Icons.person_add_alt_1, color: AppColors.orange, size: 20),
                   SizedBox(width: 12),
-                  Text('Search or add a new friend...', style: TextStyle(fontFamily: 'Nunito', fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.orange)),
+                  Text('Search or add a new friend...', style: TextStyle(fontFamily: 'Inter', fontSize: 15, fontWeight: FontWeight.w800, color: AppColors.orange)),
                 ],
               ),
             ),
@@ -918,7 +918,7 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(friendName, style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: textColor)),
+                                  Text(friendName, style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w800, color: textColor)),
                                   Text(friendData['email'] ?? friendData['phone'] ?? '', style: TextStyle(fontSize: 12, color: isDark ? AppColors.darkMuted : AppColors.muted)),
                                 ],
                               ),
@@ -943,7 +943,7 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
               decoration: BoxDecoration(color: _isLoading ? Colors.grey : AppColors.orange, borderRadius: BorderRadius.circular(14)),
               child: Center(child: _isLoading 
                 ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                : const Text('Save Changes →', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))
+                : const Text('Save Changes →', style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white))
               ),
             ),
           ),
@@ -953,7 +953,7 @@ class _EditGroupSheetState extends State<_EditGroupSheet> {
   }
 
   Widget _label(String text) => Text(text, style: const TextStyle(
-    fontFamily: 'Nunito', fontSize: 12,
+    fontFamily: 'Inter', fontSize: 12,
     fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5,
   ));
 }
@@ -1049,7 +1049,7 @@ class _LiveGlobalHeaderState extends State<LiveGlobalHeader> {
   }
 
   Widget _balanceItem(String label, String value, Color color) {
-    return Column(children: [Text(label, style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.55), letterSpacing: 1, fontWeight: FontWeight.w700)), const SizedBox(height: 3), Text(value, style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w900, color: color))]);
+    return Column(children: [Text(label, style: TextStyle(fontSize: 9, color: Colors.white.withOpacity(0.55), letterSpacing: 1, fontWeight: FontWeight.w700)), const SizedBox(height: 3), Text(value, style: TextStyle(fontFamily: 'Inter', fontSize: 16, fontWeight: FontWeight.w900, color: color))]);
   }
 
   @override
@@ -1070,7 +1070,7 @@ class _LiveGlobalHeaderState extends State<LiveGlobalHeader> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Row(children: [Builder(builder: (innerContext) => GestureDetector(onTap: () => Scaffold.of(innerContext).openDrawer(), child: const Padding(padding: EdgeInsets.only(right: 12.0), child: Icon(Icons.menu, color: Colors.white, size: 28)))), RichText(text: const TextSpan(children: [TextSpan(text: 'Split', style: TextStyle(fontFamily: 'Nunito', fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white)), TextSpan(text: 'Sathi', style: TextStyle(fontFamily: 'Nunito', fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFFFCD34D)))]))]),
+                  Row(children: [Builder(builder: (innerContext) => GestureDetector(onTap: () => Scaffold.of(innerContext).openDrawer(), child: const Padding(padding: EdgeInsets.only(right: 12.0), child: Icon(Icons.menu, color: Colors.white, size: 28)))), RichText(text: const TextSpan(children: [TextSpan(text: 'Split', style: TextStyle(fontFamily: 'Inter', fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white)), TextSpan(text: 'Sathi', style: TextStyle(fontFamily: 'Inter', fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFFFCD34D)))]))]),
                   
                   // --- NEW: SCANNER & DARK MODE ROW ---
                   Row(

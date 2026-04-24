@@ -1,75 +1,138 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:cloud_firestore/cloud_firestore.dart'; 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/group.dart';
 import '../models/diary_entry.dart';
 import '../models/direct_payment.dart';
 
+/// App-wide state.
+///
+/// Data layout matches the app's original design (top-level collections —
+/// groups/diaryCats/diaryEntries/directPayments). The ONLY change from the
+/// original is that listeners start/stop with the auth state, so in-memory
+/// data is cleared on logout and refreshed on login. This kills the stale-
+/// state bug without changing your data model.
 class AppProvider extends ChangeNotifier {
   final SharedPreferences _prefs;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  // ---- App-level preferences ----
+  bool _hapticsEnabled = true;
   bool _isDark = false;
-  String _currency = '₹'; // <-- NEW: Currency variable
+  String _currency = '₹';
 
+  // ---- Data (cleared on logout) ----
   List<Group> _groups = [];
   List<DiaryCategory> _diaryCats = [];
   List<DiaryEntry> _diaryEntries = [];
   List<DirectPayment> _directPayments = [];
 
-  // Stream Subscriptions to keep data synced in real-time
+  // ---- Stream subs ----
   StreamSubscription? _groupSub;
   StreamSubscription? _diaryCatSub;
   StreamSubscription? _diaryEntrySub;
   StreamSubscription? _paymentSub;
 
+  // ---- Auth sub ----
+  StreamSubscription<User?>? _authSub;
+  String? _activeUid;
+
   AppProvider(this._prefs) {
     _isDark = _prefs.getBool('isDark') ?? false;
-    _currency = _prefs.getString('currency') ?? '₹'; 
-    
-    _listenToGroups();
-    _listenToDiary();
-    _listenToDirectPayments();
+    _hapticsEnabled = _prefs.getBool('haptics') ?? true;
+    _currency = _prefs.getString('currency') ?? '₹';
+
+    _authSub = FirebaseAuth.instance.authStateChanges().listen(_onAuthChanged);
   }
 
   @override
   void dispose() {
-    // Clean up streams when app closes
-    _groupSub?.cancel();
-    _diaryCatSub?.cancel();
-    _diaryEntrySub?.cancel();
-    _paymentSub?.cancel();
+    _authSub?.cancel();
+    _cancelDataStreams();
     super.dispose();
   }
 
-  // GETTERS
+  // ================= GETTERS =================
+  bool get hapticsEnabled => _hapticsEnabled;
   bool get isDark => _isDark;
-  String get currency => _currency; 
-  
+  String get currency => _currency;
+
   List<Group> get groups => _groups;
   List<DiaryCategory> get diaryCats => _diaryCats;
   List<DiaryEntry> get diaryEntries => _diaryEntries;
   List<DirectPayment> get directPayments => _directPayments;
 
-  // DARK MODE (Stays local)
+  // ================= AUTH LIFECYCLE =================
+  void _onAuthChanged(User? user) {
+    if (user == null) {
+      _cancelDataStreams();
+      _clearData();
+      _activeUid = null;
+      notifyListeners();
+      return;
+    }
+    if (_activeUid == user.uid) return;
+
+    _cancelDataStreams();
+    _clearData();
+    _activeUid = user.uid;
+    _listenToGroups();
+    _listenToDiary();
+    _listenToDirectPayments();
+    notifyListeners();
+  }
+
+  void _cancelDataStreams() {
+    _groupSub?.cancel();
+    _diaryCatSub?.cancel();
+    _diaryEntrySub?.cancel();
+    _paymentSub?.cancel();
+    _groupSub = null;
+    _diaryCatSub = null;
+    _diaryEntrySub = null;
+    _paymentSub = null;
+  }
+
+  void _clearData() {
+    _groups = [];
+    _diaryCats = [];
+    _diaryEntries = [];
+    _directPayments = [];
+  }
+
+  void clearAllData() {
+    _cancelDataStreams();
+    _clearData();
+    _activeUid = null;
+    notifyListeners();
+  }
+
+  // ================= PREFERENCES =================
   void toggleDarkMode() {
     _isDark = !_isDark;
     _prefs.setBool('isDark', _isDark);
     notifyListeners();
   }
 
-  // <-- NEW: CURRENCY ENGINE -->
+  void setHaptics(bool value) {
+    _hapticsEnabled = value;
+    _prefs.setBool('haptics', value);
+    notifyListeners();
+  }
+
   void setCurrency(String newCurrency) {
     _currency = newCurrency;
     _prefs.setString('currency', _currency);
-    notifyListeners(); // This shouts to the whole app: "UPDATE THE UI!"
+    notifyListeners();
   }
 
   // ================= GROUPS =================
   void _listenToGroups() {
     _groupSub = _db.collection('groups').snapshots().listen((snapshot) {
-      _groups = snapshot.docs.map((doc) => Group.fromJson(doc.data())).toList();
+      _groups =
+          snapshot.docs.map((doc) => Group.fromJson(doc.data())).toList();
       notifyListeners();
     });
   }
@@ -89,7 +152,6 @@ class AppProvider extends ChangeNotifier {
   void addExpense(String groupId, Expense expense) {
     final g = _groups.firstWhere((g) => g.id == groupId);
     g.expenses.add(expense);
-    // Update the whole expenses array in Firestore
     _db.collection('groups').doc(groupId).update({
       'expenses': g.expenses.map((e) => e.toJson()).toList()
     });
@@ -122,29 +184,33 @@ class AppProvider extends ChangeNotifier {
 
   // ================= DIARY =================
   void _listenToDiary() {
-    // Listen to Categories
     _diaryCatSub = _db.collection('diaryCats').snapshots().listen((snapshot) {
-      _diaryCats = snapshot.docs.map((doc) => DiaryCategory.fromJson(doc.data())).toList();
+      _diaryCats = snapshot.docs
+          .map((doc) => DiaryCategory.fromJson(doc.data()))
+          .toList();
       if (_diaryCats.isEmpty) _initDefaultCats();
       notifyListeners();
     });
 
-    // Listen to Entries
     _diaryEntrySub = _db.collection('diaryEntries').snapshots().listen((snapshot) {
-      _diaryEntries = snapshot.docs.map((doc) => DiaryEntry.fromJson(doc.data())).toList();
+      _diaryEntries = snapshot.docs
+          .map((doc) => DiaryEntry.fromJson(doc.data()))
+          .toList();
       notifyListeners();
     });
   }
 
   void _initDefaultCats() {
+    if (_activeUid == null) return; // Safety check
+    
     final defaultCats = [
-      DiaryCategory(id: 'c1', name: 'Living', icon: '🏠'),
-      DiaryCategory(id: 'c2', name: 'Food', icon: '🍽️'),
-      DiaryCategory(id: 'c3', name: 'Transport', icon: '🚗'),
-      DiaryCategory(id: 'c4', name: 'Lifestyle', icon: '🎬'),
-      DiaryCategory(id: 'c5', name: 'Finance', icon: '💰'),
+      DiaryCategory(id: 'c1', userId: _activeUid!, name: 'Living', icon: '🏠'),
+      DiaryCategory(id: 'c2', userId: _activeUid!, name: 'Food', icon: '🍽️'),
+      DiaryCategory(id: 'c3', userId: _activeUid!, name: 'Transport', icon: '🚗'),
+      DiaryCategory(id: 'c4', userId: _activeUid!, name: 'Lifestyle', icon: '🎬'),
+      DiaryCategory(id: 'c5', userId: _activeUid!, name: 'Finance', icon: '💰'),
     ];
-    for (var cat in defaultCats) {
+    for (final cat in defaultCats) {
       addDiaryCategory(cat);
     }
   }
@@ -159,9 +225,8 @@ class AppProvider extends ChangeNotifier {
 
   void deleteDiaryCategory(String catId) {
     _db.collection('diaryCats').doc(catId).delete();
-    // Also delete associated entries from Firestore
     final entriesToDelete = _diaryEntries.where((e) => e.catId == catId);
-    for (var entry in entriesToDelete) {
+    for (final entry in entriesToDelete) {
       deleteDiaryEntry(entry.id);
     }
   }
@@ -176,8 +241,11 @@ class AppProvider extends ChangeNotifier {
 
   // ================= DIRECT PAYMENTS =================
   void _listenToDirectPayments() {
-    _paymentSub = _db.collection('directPayments').snapshots().listen((snapshot) {
-      _directPayments = snapshot.docs.map((doc) => DirectPayment.fromJson(doc.data())).toList();
+    _paymentSub =
+        _db.collection('directPayments').snapshots().listen((snapshot) {
+      _directPayments = snapshot.docs
+          .map((doc) => DirectPayment.fromJson(doc.data()))
+          .toList();
       notifyListeners();
     });
   }

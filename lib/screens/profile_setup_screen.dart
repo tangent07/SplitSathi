@@ -1,11 +1,9 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:provider/provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import '../providers/app_provider.dart';
+import 'package:provider/provider.dart';
 import '../services/auth_service.dart';
-import '../utils/constants.dart';
-import 'home_screen.dart';
+import '../providers/app_provider.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -15,224 +13,197 @@ class ProfileSetupScreen extends StatefulWidget {
 }
 
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
-  final _nameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  
-  String _selectedCountryCode = '+91'; 
+  final TextEditingController _nameController = TextEditingController();
   bool _isLoading = false;
-
-  // NEW: Smart variables to track what Firebase already knows!
-  bool _isPhoneVerified = false;
-  String _verifiedPhoneNumber = '';
 
   @override
   void initState() {
     super.initState();
-    
-    // Check what Firebase already knows about this user
-    final user = AuthService().currentUser;
-    if (user != null) {
-      // 1. If Google Login: They have a name!
-      if (user.displayName != null && user.displayName!.isNotEmpty) {
-        _nameController.text = user.displayName!;
-      }
-      
-      // 2. If Phone Login: They have a verified phone number!
-      if (user.phoneNumber != null && user.phoneNumber!.isNotEmpty) {
-        _isPhoneVerified = true;
-        _verifiedPhoneNumber = user.phoneNumber!;
-      }
+    final user = FirebaseAuth.instance.currentUser;
+    if (user != null &&
+        user.displayName != null &&
+        user.displayName!.isNotEmpty) {
+      _nameController.text = user.displayName!;
     }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
-    _phoneController.dispose();
     super.dispose();
   }
 
-  Future<void> _saveProfile() async {
+  Future<void> _completeSetup() async {
     final name = _nameController.text.trim();
-    
-    // SMART CHECK: Use the verified number if we have it, otherwise stitch the new one
-    final finalPhoneNumber = _isPhoneVerified 
-        ? _verifiedPhoneNumber 
-        : '$_selectedCountryCode ${_phoneController.text.trim()}';
-
-    if (name.isEmpty || finalPhoneNumber.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('Please fill in all fields!'),
-          backgroundColor: AppColors.error,
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+    if (name.isEmpty) {
+      _showError('Please enter your full name');
+      return;
+    }
+    if (name.length < 2) {
+      _showError('Please enter a valid name');
       return;
     }
 
     setState(() => _isLoading = true);
-    HapticFeedback.mediumImpact();
 
     try {
-      final user = AuthService().currentUser;
-      if (user != null) {
-        await FirebaseFirestore.instance.collection('users').doc(user.uid).set({
-          'uid': user.uid,
-          'name': name,
-          'phone': finalPhoneNumber, // Save the final locked number
-          'email': user.email ?? '',
-          'photoUrl': user.photoURL ?? '',
-          'createdAt': FieldValue.serverTimestamp(),
-          'profileComplete': true, 
-        }, SetOptions(merge: true));
-
-        if (!mounted) return;
-        
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const HomeScreen()),
-        );
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw Exception('No signed-in user');
       }
+
+      await user.updateDisplayName(name);
+
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .set({
+        'name': name,
+        'email': user.email ?? '',
+        'phone': user.phoneNumber ?? '',
+        'photoUrl': user.photoURL ?? '',
+        'uid': user.uid,
+        'createdAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
+      // AuthGate will instantly detect the new 'name' and route to HomeScreen.
+      // We don't manually navigate here.
     } catch (e) {
-      debugPrint("Error saving profile: $e");
+      if (!mounted) return;
+      _showError('Could not save your profile. Please try again.');
       setState(() => _isLoading = false);
     }
   }
 
+  Future<void> _cancelAndLogout() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Cancel sign in?',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        content: const Text(
+            'You\'ll need to sign in again to use SplitSathi.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Stay', style: TextStyle(color: Colors.grey)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cancel sign in',
+                style: TextStyle(
+                    color: Colors.redAccent, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+    if (!mounted) return;
+
+    context.read<AppProvider>().clearAllData();
+    await AuthService().signOut();
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final isDark = context.watch<AppProvider>().isDark;
-    final bg = isDark ? AppColors.darkBg : AppColors.cream;
-    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
-    final inputBg = isDark ? AppColors.darkSurface : Colors.white;
-
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: const Color(0xFFFFF7ED),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new,
+              color: Color(0xFFF97316)),
+          onPressed: _isLoading ? null : _cancelAndLogout,
+          tooltip: 'Cancel sign in',
+        ),
+      ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(32.0),
+        child: SingleChildScrollView(
+          padding:
+              const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
           child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                'Almost there! 🎉',
-                style: TextStyle(fontFamily: 'Nunito', fontSize: 32, fontWeight: FontWeight.w900, color: textColor),
-              ),
-              const SizedBox(height: 8),
-              Text(
+              const Text('Almost there! 🎉',
+                  style: TextStyle(
+                      fontSize: 36,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF1C1C1C))),
+              const SizedBox(height: 12),
+              const Text(
                 'Let\'s complete your profile so your friends can easily find you.',
-                style: TextStyle(fontSize: 16, color: isDark ? AppColors.darkMuted : AppColors.muted),
+                style: TextStyle(fontSize: 18, color: Colors.grey),
               ),
               const SizedBox(height: 48),
-
-              // Name Input
-              Text('YOUR FULL NAME', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange)),
+              const Text('YOUR FULL NAME',
+                  style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFFF97316),
+                      letterSpacing: 1.2)),
               const SizedBox(height: 8),
               TextField(
                 controller: _nameController,
-                style: TextStyle(color: textColor, fontWeight: FontWeight.w700),
+                textCapitalization: TextCapitalization.words,
+                enabled: !_isLoading,
                 decoration: InputDecoration(
-                  filled: true, fillColor: inputBg,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                  prefixIcon: const Icon(Icons.person_outline, color: AppColors.orange),
+                  filled: true,
+                  fillColor: Colors.white,
+                  prefixIcon: const Icon(Icons.person_outline,
+                      color: Color(0xFFF97316)),
+                  hintText: 'e.g. John Doe',
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      borderSide: BorderSide.none),
                 ),
               ),
-              const SizedBox(height: 24),
-
-              // DYNAMIC Phone Input Area
-              Text('PHONE NUMBER', style: TextStyle(fontFamily: 'Nunito', fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.orange)),
-              const SizedBox(height: 8),
-              
-              if (_isPhoneVerified) ...[
-                // THE LOCKED VERIFIED STATE
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.darkSurface2 : Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: Colors.green.withOpacity(0.5)),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.verified_user, color: Colors.green),
-                      const SizedBox(width: 12),
-                      Text(
-                        _verifiedPhoneNumber,
-                        style: TextStyle(color: textColor, fontWeight: FontWeight.w800, fontSize: 16, letterSpacing: 1),
-                      ),
-                      const Spacer(),
-                      const Text(
-                        'Verified',
-                        style: TextStyle(color: Colors.green, fontWeight: FontWeight.w800, fontSize: 12),
-                      ),
-                    ],
-                  ),
-                ),
-              ] else ...[
-                // THE EDITABLE GOOGLE LOGIN STATE
-                TextField(
-                  controller: _phoneController,
-                  keyboardType: TextInputType.phone,
-                  style: TextStyle(color: textColor, fontWeight: FontWeight.w700),
-                  decoration: InputDecoration(
-                    hintText: '98765 43210', 
-                    hintStyle: TextStyle(
-                      color: (isDark ? AppColors.darkMuted : AppColors.muted).withOpacity(0.4), 
-                      fontWeight: FontWeight.w500
-                    ),
-                    filled: true, fillColor: inputBg,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-                    prefixIcon: Padding(
-                      padding: const EdgeInsets.only(left: 16.0, right: 8.0),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.phone_outlined, color: AppColors.orange, size: 20),
-                          const SizedBox(width: 8),
-                          DropdownButtonHideUnderline(
-                            child: DropdownButton<String>(
-                              value: _selectedCountryCode,
-                              icon: const Icon(Icons.arrow_drop_down, color: AppColors.orange),
-                              dropdownColor: inputBg,
-                              style: TextStyle(color: textColor, fontFamily: 'Nunito', fontWeight: FontWeight.w800, fontSize: 15),
-                              onChanged: (String? newValue) {
-                                if (newValue != null) {
-                                  setState(() => _selectedCountryCode = newValue);
-                                }
-                              },
-                              items: AppConstants.countryCodes.map<DropdownMenuItem<String>>((String value) {
-                                return DropdownMenuItem<String>(value: value, child: Text(value));
-                              }).toList(),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(width: 1.5, height: 24, color: (isDark ? AppColors.darkBorder : AppColors.border).withOpacity(0.5)),
-                          const SizedBox(width: 8),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-
               const SizedBox(height: 48),
-
-              // Save Button
-              _isLoading
-                  ? const Center(child: CircularProgressIndicator(color: AppColors.orange))
-                  : GestureDetector(
-                      onTap: _saveProfile,
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 16),
-                        decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(16)),
-                        child: const Center(
-                          child: Text('Complete Setup →', style: TextStyle(fontFamily: 'Nunito', fontSize: 16, fontWeight: FontWeight.w800, color: Colors.white)),
-                        ),
-                      ),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _completeSetup,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFF97316),
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size(double.infinity, 56),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16)),
+                  elevation: 0,
+                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text('Complete Setup ➔',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 16),
+              Center(
+                child: TextButton(
+                  onPressed: _isLoading ? null : _cancelAndLogout,
+                  child: Text(
+                    'Not you? Sign in with a different account',
+                    style: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontWeight: FontWeight.w600,
                     ),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

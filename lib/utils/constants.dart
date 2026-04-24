@@ -87,35 +87,35 @@ class AppConstants {
 
 class AppTextStyles {
   static TextStyle heading({bool dark = false}) => TextStyle(
-    fontFamily: 'Nunito',
+    fontFamily: 'Inter',
     fontSize: 24,
     fontWeight: FontWeight.w900,
     color: dark ? Colors.white : const Color(0xFF1C1C1C),
   );
 
   static TextStyle subheading({bool dark = false}) => TextStyle(
-    fontFamily: 'Nunito',
+    fontFamily: 'Inter',
     fontSize: 16,
     fontWeight: FontWeight.w800,
     color: dark ? Colors.white : const Color(0xFF1C1C1C),
   );
 
   static TextStyle body({bool dark = false}) => TextStyle(
-    fontFamily: 'Nunito',
+    fontFamily: 'Inter',
     fontSize: 14,
     fontWeight: FontWeight.w600,
     color: dark ? Colors.white70 : const Color(0xFF1C1C1C),
   );
 
   static TextStyle amount({Color? color}) => TextStyle(
-    fontFamily: 'Nunito',
+    fontFamily: 'Inter',
     fontSize: 22,
     fontWeight: FontWeight.w900,
     color: color ?? AppColors.orange,
   );
 
   static TextStyle muted({bool dark = false}) => TextStyle(
-    fontFamily: 'Nunito',
+    fontFamily: 'Inter',
     fontSize: 12,
     fontWeight: FontWeight.w600,
     color: dark ? AppColors.darkMuted : AppColors.muted,

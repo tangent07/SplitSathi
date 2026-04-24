@@ -79,7 +79,9 @@ class _MoneyDiaryScreenState extends State<MoneyDiaryScreen> with SingleTickerPr
             final allEntries = (entrySnapshot.data?.docs ?? []).map((doc) {
               final data = doc.data() as Map<String, dynamic>;
               return DiaryEntry(
-                id: doc.id, amount: (data['amount'] as num).toDouble(),
+                id: doc.id, 
+                userId: data['userId'] ?? '',
+                amount: (data['amount'] as num).toDouble(),
                 note: data['name'] ?? '', catId: data['category'] ?? 'Other',
                 date: (data['date'] as Timestamp).toDate(),
                 deleted: data['deleted'] ?? false,
@@ -160,7 +162,7 @@ class _MoneyDiaryScreenState extends State<MoneyDiaryScreen> with SingleTickerPr
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.orange, size: 20), onPressed: () => Navigator.pop(context)),
-              const Text('Money Diary', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.orange)),
+              const Text('Money Diary', style: TextStyle(fontFamily: 'Inter', fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.orange)),
               IconButton(icon: const Icon(Icons.grid_view_rounded, color: AppColors.orange, size: 22), onPressed: () => _manageCategories(context)),
             ],
           ),

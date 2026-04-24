@@ -2,21 +2,25 @@ import 'package:uuid/uuid.dart';
 
 class DiaryCategory {
   final String id;
+  final String userId; // <-- NEW: Security Name Tag
   String name;
   String icon;
 
   DiaryCategory({
     required this.id,
+    required this.userId,
     required this.name,
     required this.icon,
   });
 
   factory DiaryCategory.create({
+    required String userId,
     required String name,
     required String icon,
   }) {
     return DiaryCategory(
       id: const Uuid().v4(),
+      userId: userId,
       name: name,
       icon: icon,
     );
@@ -25,6 +29,7 @@ class DiaryCategory {
   factory DiaryCategory.fromJson(Map<String, dynamic> json) {
     return DiaryCategory(
       id: json['id'],
+      userId: json['userId'] ?? '', // Fallback for old data
       name: json['name'],
       icon: json['icon'] ?? '📦',
     );
@@ -32,6 +37,7 @@ class DiaryCategory {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'userId': userId,
     'name': name,
     'icon': icon,
   };
@@ -39,6 +45,7 @@ class DiaryCategory {
 
 class DiaryEntry {
   final String id;
+  final String userId; // <-- NEW: Security Name Tag
   final String catId;
   final String note;
   final double amount;
@@ -47,6 +54,7 @@ class DiaryEntry {
 
   DiaryEntry({
     required this.id,
+    required this.userId,
     required this.catId,
     required this.amount,
     required this.note,
@@ -55,12 +63,14 @@ class DiaryEntry {
   });
 
   factory DiaryEntry.create({
+    required String userId,
     required String catId,
     required double amount,
     required String note,
   }) {
     return DiaryEntry(
       id: const Uuid().v4(),
+      userId: userId,
       catId: catId,
       amount: amount,
       note: note,
@@ -71,6 +81,7 @@ class DiaryEntry {
   factory DiaryEntry.fromJson(Map<String, dynamic> json) {
     return DiaryEntry(
       id: json['id'],
+      userId: json['userId'] ?? '', // Fallback for old data
       catId: json['catId'],
       amount: (json['amount'] as num).toDouble(),
       note: json['note'] ?? '',
@@ -80,6 +91,7 @@ class DiaryEntry {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'userId': userId,
     'catId': catId,
     'amount': amount,
     'note': note,

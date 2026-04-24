@@ -163,7 +163,7 @@ class _SettleUpSheetState extends State<SettleUpSheet> {
           const SizedBox(height: 16),
           Text('You are paying ${widget.receiverName}', style: TextStyle(fontSize: 16, color: Colors.grey.shade500, fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          Text('₹${widget.amount.toStringAsFixed(0)}', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: textColor, fontFamily: 'Nunito')),
+          Text('₹${widget.amount.toStringAsFixed(0)}', style: TextStyle(fontSize: 40, fontWeight: FontWeight.w900, color: textColor, fontFamily: 'Inter')),
           const SizedBox(height: 32),
 
           // Option 1: Cash

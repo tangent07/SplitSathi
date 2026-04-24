@@ -124,7 +124,7 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         leading: IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.orange), onPressed: () => Navigator.pop(context)),
-        title: const Text('Scan Receipt', style: TextStyle(color: AppColors.orange, fontWeight: FontWeight.w900, fontFamily: 'Nunito')),
+        title: const Text('Scan Receipt', style: TextStyle(color: AppColors.orange, fontWeight: FontWeight.w900, fontFamily: 'Inter')),
         centerTitle: true,
       ),
       body: _isScanning 

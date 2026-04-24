@@ -1,7 +1,6 @@
 import '../main.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
-import '../utils/constants.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -10,44 +9,62 @@ class SplashScreen extends StatefulWidget {
   State<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<double> _scaleAnimation;
+class _SplashScreenState extends State<SplashScreen>
+    with TickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  // How far (in logical pixels) the icon-only phase is offset down from
+  // its final resting position. When the controller is at 0 the icon is
+  // centered on screen (matching native splash); as it progresses, the
+  // icon lifts up into its final position and the text fades in below.
+  static const double _iconStartDrop = 80.0;
+
+  late final Animation<double> _iconLift;
+  late final Animation<double> _titleFade;
+  late final Animation<double> _taglineFade;
+
+  Timer? _navTimer;
 
   @override
   void initState() {
     super.initState();
 
-    // 1. Setup the Animation Controller (Controls the timing)
     _controller = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 1600),
     );
 
-    // 2. Setup Fade and Scale Effects
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeIn),
-    );
-    // The easeOutBack curve gives it that cool little "bounce" or "pop" effect!
-    _scaleAnimation = Tween<double>(begin: 0.5, end: 1.0).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutBack),
+    _iconLift = Tween<double>(begin: _iconStartDrop, end: 0.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.45, curve: Curves.easeOutCubic),
+      ),
     );
 
-    // 3. Start the animation
+    _titleFade = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.4, 0.7, curve: Curves.easeIn),
+    ));
+
+    _taglineFade = Tween<double>(begin: 0.0, end: 1.0).animate(CurvedAnimation(
+      parent: _controller,
+      curve: const Interval(0.7, 1.0, curve: Curves.easeIn),
+    ));
+
     _controller.forward();
 
-    // 4. Wait 3 seconds, then navigate to your main app
-    Timer(const Duration(seconds: 3), () {
+    _navTimer = Timer(const Duration(milliseconds: 2400), () {
+      if (!mounted) return;
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => const AuthGate()), // Points to Gatekeeper!
+        MaterialPageRoute(builder: (_) => const AuthGate()),
       );
     });
   }
 
   @override
   void dispose() {
+    _navTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -55,57 +72,56 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      // Using your fresh new brand orange!
-      backgroundColor: const Color(0xFFF27A18), 
-      body: Center(
-        child: FadeTransition(
-          opacity: _fadeAnimation,
-          child: ScaleTransition(
-            scale: _scaleAnimation,
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(24),
-                  child: Image.asset('assets/icons/app_icon.png', width: 200),
+      backgroundColor: const Color(0xFFF97316),
+      body: SafeArea(
+        child: Center(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, _) {
+              // Shift the whole column downward at the start so that the
+              // icon (the first child) sits where the native splash icon
+              // was (screen center). As the controller runs, iconLift
+              // decreases to 0 and the column settles into its final
+              // centered position — with the text now occupying the
+              // bottom half of the column.
+              return Transform.translate(
+                offset: Offset(0, _iconLift.value),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.asset(
+                      'assets/icons/wallet_icon.png',
+                      width: 110,
+                      height: 110,
+                    ),
+                    const SizedBox(height: 8),
+                    Opacity(
+                      opacity: _titleFade.value,
+                      child: const Text(
+                        'SplitSathi',
+                        style: TextStyle(
+                          fontSize: 40,
+                          fontWeight: FontWeight.w900,
+                          color: Colors.white,
+                          letterSpacing: 1.2,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Opacity(
+                      opacity: _taglineFade.value,
+                      child: Text(
+                        'Split bills. Not friendships. 🤝',
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.white.withOpacity(0.9),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(
-                    color: Colors.white,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.2), blurRadius: 20, offset: const Offset(0, 10))
-                    ]
-                  ),
-                  child: const Icon(Icons.people_alt_rounded, size: 80, color: Color(0xFFF27A18)),
-                ),
-                const SizedBox(height: 32),
-                
-                // --- APP NAME ---
-                const Text(
-                  'SplitSathi',
-                  style: TextStyle(
-                    fontFamily: 'Nunito',
-                    fontSize: 40,
-                    fontWeight: FontWeight.w900,
-                    color: Colors.white,
-                    letterSpacing: 2,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                
-                // --- TAGLINE ---
-                const Text(
-                  'Split bills. Not friendships.',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
+              );
+            },
           ),
         ),
       ),

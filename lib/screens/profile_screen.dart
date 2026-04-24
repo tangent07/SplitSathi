@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../providers/app_provider.dart';
 import '../services/auth_service.dart';
 import '../utils/constants.dart';
+import '../widgets/phone_link_sheet.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -15,363 +16,281 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   final _nameController = TextEditingController();
-  final _emailController = TextEditingController();
   final _user = AuthService().currentUser;
-  
-  bool _isSaving = false;
-  String _originalEmail = "";
+
+  bool _isSavingName = false;
+  bool _isEditingName = false;
+  bool _isLinkingGoogle = false;
+  bool _nameInitialized = false;
+  String _savedName = '';
 
   @override
   void dispose() {
     _nameController.dispose();
-    _emailController.dispose();
     super.dispose();
   }
 
-  // --- 1. SAVE NAME LOGIC ---
+  // -------- NAME --------
+
+  void _startEditName() {
+    setState(() => _isEditingName = true);
+  }
+
+  void _cancelEditName() {
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _nameController.text = _savedName;
+      _isEditingName = false;
+    });
+  }
+
   Future<void> _saveProfileName() async {
-    if (_user == null) return;
-    
-    setState(() => _isSaving = true);
+    final user = _user;
+    if (user == null) return;
+
+    final name = _nameController.text.trim();
+
+    if (name.isEmpty) {
+      _showError('Name cannot be empty');
+      return;
+    }
+    if (name.length < 2) {
+      _showError('Please enter a valid name');
+      return;
+    }
+
+    setState(() => _isSavingName = true);
     HapticFeedback.mediumImpact();
 
     try {
-      await FirebaseFirestore.instance.collection('users').doc(_user!.uid).update({
-        'name': _nameController.text.trim(),
-      });
-      
+      await user.updateDisplayName(name);
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({'name': name});
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: const Text('Name updated successfully!'), backgroundColor: Colors.green.shade600),
-        );
+        FocusScope.of(context).unfocus();
+        setState(() {
+          _savedName = name;
+          _isEditingName = false;
+        });
+        _showSuccess('Name updated');
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+      if (mounted) _showError('Could not update name. Please try again.');
     } finally {
-      if (mounted) setState(() => _isSaving = false);
+      if (mounted) setState(() => _isSavingName = false);
     }
   }
 
-  // --- 2. EMAIL EDIT FLOW (STEP 1: GET NEW EMAIL) ---
-  void _startEmailChangeFlow() {
-    final newEmailCtrl = TextEditingController();
-    
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Change Email', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: TextField(
-          controller: newEmailCtrl,
-          keyboardType: TextInputType.emailAddress,
-          decoration: InputDecoration(
-            hintText: "Enter new email address",
-            filled: true,
-            fillColor: Colors.grey.shade100,
-            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
-          ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            onPressed: () {
-              final newEmail = newEmailCtrl.text.trim();
-              if (newEmail.isNotEmpty && newEmail != _originalEmail) {
-                Navigator.pop(ctx); // Close step 1
-                _showOtpDialog(newEmail); // Open step 2
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-            child: const Text('Send OTP', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      )
-    );
-  }
+  // -------- LINK EMAIL (Google) --------
 
-  // --- 3. EMAIL EDIT FLOW (STEP 2: VERIFY OTP) ---
-  void _showOtpDialog(String newEmail) {
-    final otpCtrl = TextEditingController();
-    // In a real app, your backend sends the email OTP here.
-    
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Verify Email', style: TextStyle(fontWeight: FontWeight.bold)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('We sent a 6-digit code to $newEmail. Enter it below to verify.'),
-            const SizedBox(height: 24),
-            TextField(
-              controller: otpCtrl,
-              keyboardType: TextInputType.number,
-              maxLength: 6,
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 24, letterSpacing: 8, fontWeight: FontWeight.bold),
-              decoration: InputDecoration(
-                counterText: "",
-                hintText: "000000",
-                filled: true,
-                fillColor: Colors.grey.shade100,
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel', style: TextStyle(color: Colors.grey))),
-          ElevatedButton(
-            onPressed: () async {
-              final enteredOtp = otpCtrl.text.trim();
-              if (enteredOtp.length == 6) { 
-                // MOCK VERIFICATION SUCCESS
-                Navigator.pop(ctx); 
-                await _saveNewEmailToDatabase(newEmail); 
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Please enter a 6-digit OTP.')));
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: const Text('Verify & Save', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-          ),
-        ],
-      )
-    );
-  }
-
-  // --- 4. EMAIL EDIT FLOW (STEP 3: SAVE TO DB) ---
-  Future<void> _saveNewEmailToDatabase(String verifiedEmail) async {
+  Future<void> _linkEmail() async {
+    if (_isLinkingGoogle) return;
+    setState(() => _isLinkingGoogle = true);
     HapticFeedback.mediumImpact();
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(_user!.uid).update({
-        'email': verifiedEmail,
-      });
-      setState(() {
-        _originalEmail = verifiedEmail;
-        _emailController.text = verifiedEmail;
-      });
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: const Text('Email updated successfully!'), backgroundColor: Colors.green.shade600));
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
+
+    final result = await AuthService().linkGoogleToCurrentUser();
+
+    if (!mounted) return;
+    setState(() => _isLinkingGoogle = false);
+
+    if (result.isSuccess) {
+      _showSuccess('Email linked successfully 🎉');
+      return;
+    }
+    if (result.cancelled) return;
+    _showError(result.errorMessage ?? 'Could not link email.');
+  }
+
+  // -------- LINK PHONE (OTP) --------
+
+  Future<void> _linkPhone() async {
+    final success = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => const PhoneLinkSheet(),
+    );
+
+    if (!mounted) return;
+    if (success == true) {
+      _showSuccess('Phone number linked successfully 🎉');
     }
   }
 
-  void _showAvatarPicker() {
-    // Premium minimalist avatars
-    final List<String> avatarSeeds = ['Felix', 'Aneka', 'Jocelyn', 'Mimi', 'Jack', 'Eden', 'Leo', 'Jade'];
-    final isDark = Provider.of<AppProvider>(context, listen: false).isDark;
+  // -------- UI FEEDBACK --------
 
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: isDark ? AppColors.darkSurface : Colors.white,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Choose an Avatar', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 24),
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4, crossAxisSpacing: 16, mainAxisSpacing: 16
-              ),
-              itemCount: avatarSeeds.length + 1, // +1 for the "Initials" option
-              itemBuilder: (context, index) {
-                if (index == avatarSeeds.length) {
-                  // The "Reset to Initials" button
-                  return GestureDetector(
-                    onTap: () => _updateAvatarInDatabase(''), // Empty string triggers the initials fallback
-                    child: Container(
-                      decoration: BoxDecoration(color: Colors.grey.shade200, shape: BoxShape.circle),
-                      child: const Center(child: Text('A-Z', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.black54))),
-                    ),
-                  );
-                }
-                
-                final url = 'https://api.dicebear.com/7.x/notionists/png?seed=${avatarSeeds[index]}&backgroundColor=transparent';
-                return GestureDetector(
-                  onTap: () => _updateAvatarInDatabase(url),
-                  child: CircleAvatar(backgroundColor: AppColors.orange.withOpacity(0.1), backgroundImage: NetworkImage(url)),
-                );
-              },
-            ),
-            const SizedBox(height: 20),
-          ],
-        ),
+  void _showSuccess(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.green.shade600,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
 
-  Future<void> _updateAvatarInDatabase(String url) async {
-    Navigator.pop(context); // close sheet
-    HapticFeedback.lightImpact();
-    try {
-      await FirebaseFirestore.instance.collection('users').doc(_user!.uid).update({'photoUrl': url});
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e')));
-    }
+  void _showError(String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: Colors.redAccent,
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.all(16),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ),
+    );
   }
+
+  // -------- BUILD --------
 
   @override
   Widget build(BuildContext context) {
     final isDark = context.watch<AppProvider>().isDark;
+    final user = _user;
 
-    if (_user == null) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (user == null) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: AppColors.orange)),
+      );
+    }
 
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.cream,
-      // Wrap in GestureDetector to dismiss keyboard
       body: GestureDetector(
         onTap: () => FocusScope.of(context).unfocus(),
         child: StreamBuilder<DocumentSnapshot>(
-          stream: FirebaseFirestore.instance.collection('users').doc(_user!.uid).snapshots(),
+          stream: FirebaseFirestore.instance
+              .collection('users')
+              .doc(user.uid)
+              .snapshots(),
           builder: (context, snapshot) {
-            if (!snapshot.hasData) return const Center(child: CircularProgressIndicator(color: AppColors.orange));
-            
-            final userData = snapshot.data?.data() as Map<String, dynamic>? ?? {};
-            
-            if (_nameController.text.isEmpty && !_isSaving) {
-              _nameController.text = userData['name'] ?? '';
-              _originalEmail = userData['email'] ?? '';
-              _emailController.text = _originalEmail;
+            if (!snapshot.hasData) {
+              return const Center(
+                  child: CircularProgressIndicator(color: AppColors.orange));
             }
-            
+
+            final userData =
+                snapshot.data?.data() as Map<String, dynamic>? ?? {};
+
+            // Initialise the name field once from Firestore.
+            if (!_nameInitialized) {
+              final nm = (userData['name'] ?? '') as String;
+              _nameController.text = nm;
+              _savedName = nm;
+              _nameInitialized = true;
+            }
+
             final photoUrl = userData['photoUrl'];
             final nameStr = userData['name'] ?? 'U';
+            final email = (userData['email'] ?? '') as String;
+            final phone = (userData['phone'] ?? '') as String;
 
             return SingleChildScrollView(
               child: Column(
                 children: [
-                  // --- PERFECTLY LAYERED HEADER ---
-                  Stack(
-                    clipBehavior: Clip.none, // Crucial: Allows avatar to break out of the orange box!
-                    alignment: Alignment.bottomCenter,
-                    children: [
-                      // Orange Background
-                      Container(
-                        width: double.infinity,
-                        height: 200,
-                        padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
-                        decoration: const BoxDecoration(
-                          gradient: LinearGradient(colors: [AppColors.orange, Color(0xFFFB923C)], begin: Alignment.topLeft, end: Alignment.bottomRight),
-                        ),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: Colors.white, size: 20), onPressed: () => Navigator.pop(context)),
-                            const Spacer(),
-                            const Padding(
-                              padding: EdgeInsets.only(top: 12),
-                              child: Text('My Profile', style: TextStyle(fontFamily: 'Nunito', fontSize: 20, fontWeight: FontWeight.w900, color: Colors.white)),
-                            ),
-                            const Spacer(),
-                            const SizedBox(width: 48), // Balance for back button
-                          ],
-                        ),
-                      ),
-                    
-                      // Overlapping Avatar with Edit Badge
-                      Positioned(
-                        bottom: -50,
-                        child: GestureDetector(
-                          onTap: _showAvatarPicker, // Opens the new picker!
-                          child: Stack(
-                            alignment: Alignment.bottomRight,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(4),
-                                decoration: BoxDecoration(color: isDark ? AppColors.darkBg : AppColors.cream, shape: BoxShape.circle),
-                                child: CircleAvatar(
-                                  radius: 50,
-                                  backgroundColor: Colors.white,
-                                  backgroundImage: (photoUrl != null && photoUrl.toString().isNotEmpty) 
-                                      ? NetworkImage(photoUrl) 
-                                      : NetworkImage('https://ui-avatars.com/api/?name=${Uri.encodeComponent(nameStr)}&background=F97316&color=fff&bold=true&size=200') as ImageProvider,
-                                ),
-                              ),
-                              // The little orange camera edit badge
-                              Positioned(
-                                bottom: 4, right: 4,
-                                child: Container(
-                                  padding: const EdgeInsets.all(8),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.orange, 
-                                    shape: BoxShape.circle, 
-                                    border: Border.all(color: isDark ? AppColors.darkBg : AppColors.cream, width: 3)
-                                  ),
-                                  child: const Icon(Icons.camera_alt_rounded, color: Colors.white, size: 16),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-
-                  // Space for the overlapping avatar
+                  _buildHeader(isDark, photoUrl, nameStr),
                   const SizedBox(height: 70),
-
-                  // --- FORM INPUTS ---
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 24),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildInputLabel('FULL NAME', isDark),
-                        _buildTextField(
-                          controller: _nameController, 
-                          icon: Icons.person_outline, 
+                        _buildSectionLabel('FULL NAME', isDark),
+                        _buildNameField(isDark),
+                        if (_isEditingName) ...[
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              TextButton(
+                                onPressed: _isSavingName
+                                    ? null
+                                    : _cancelEditName,
+                                style: TextButton.styleFrom(
+                                  foregroundColor: Colors.grey.shade600,
+                                ),
+                                child: const Text(
+                                  'Cancel',
+                                  style: TextStyle(
+                                      fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              SizedBox(
+                                height: 44,
+                                child: ElevatedButton(
+                                  onPressed: _isSavingName
+                                      ? null
+                                      : _saveProfileName,
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.orange,
+                                    shape: RoundedRectangleBorder(
+                                        borderRadius:
+                                            BorderRadius.circular(12)),
+                                    elevation: 0,
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 20),
+                                  ),
+                                  child: _isSavingName
+                                      ? const SizedBox(
+                                          width: 18,
+                                          height: 18,
+                                          child: CircularProgressIndicator(
+                                              color: Colors.white,
+                                              strokeWidth: 2),
+                                        )
+                                      : const Text(
+                                          'Save',
+                                          style: TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold),
+                                        ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                        const SizedBox(height: 32),
+                        _buildSectionLabel('LINKED ACCOUNTS', isDark),
+                        const SizedBox(height: 8),
+                        _buildSlotCard(
                           isDark: isDark,
+                          icon: Icons.email_rounded,
+                          label: 'Email',
+                          value: email,
+                          emptyCta: 'Add Email',
+                          onAdd: _linkEmail,
+                          isLoading: _isLinkingGoogle,
                         ),
-                        
-                        const SizedBox(height: 24),
-                        
-                        _buildInputLabel('EMAIL ADDRESS', isDark),
-                        _buildTextField(
-                          controller: _emailController, 
-                          icon: Icons.email_outlined, 
+                        const SizedBox(height: 12),
+                        _buildSlotCard(
                           isDark: isDark,
-                          readOnly: true, // Lock this field
-                          suffixIcon: IconButton(
-                            icon: const Icon(Icons.edit, color: AppColors.orange, size: 20),
-                            onPressed: _startEmailChangeFlow, // Trigger OTP Flow
+                          icon: Icons.phone_rounded,
+                          label: 'Phone Number',
+                          value: phone,
+                          emptyCta: 'Add Phone Number',
+                          onAdd: _linkPhone,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(
+                          'Linked accounts are permanent and cannot be changed. Add carefully.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey.shade500,
+                            fontStyle: FontStyle.italic,
                           ),
                         ),
-                        
                         const SizedBox(height: 40),
-                        
-                        // Save Button (Only saves the name now, email is handled via OTP)
-                        SizedBox(
-                          width: double.infinity, height: 60,
-                          child: ElevatedButton(
-                            onPressed: _isSaving ? null : _saveProfileName,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.orange,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                              elevation: 8, shadowColor: AppColors.orange.withOpacity(0.5),
-                            ),
-                            child: _isSaving 
-                              ? const CircularProgressIndicator(color: Colors.white)
-                              : const Text('Save Changes', style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-                          ),
-                        )
                       ],
                     ),
                   ),
-                  const SizedBox(height: 40),
                 ],
               ),
             );
@@ -381,30 +300,235 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildInputLabel(String text, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.only(left: 4, bottom: 8), 
-      child: Text(text, style: TextStyle(color: Colors.grey.shade500, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1.5))
+  // -------- UI HELPERS --------
+
+  Widget _buildHeader(bool isDark, dynamic photoUrl, String nameStr) {
+    return Stack(
+      clipBehavior: Clip.none,
+      alignment: Alignment.bottomCenter,
+      children: [
+        Container(
+          width: double.infinity,
+          height: 200,
+          padding: EdgeInsets.only(top: MediaQuery.of(context).padding.top),
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [AppColors.orange, Color(0xFFFB923C)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new,
+                    color: Colors.white, size: 20),
+                onPressed: () => Navigator.pop(context),
+              ),
+              const Spacer(),
+              const Padding(
+                padding: EdgeInsets.only(top: 12),
+                child: Text(
+                  'My Profile',
+                  style: TextStyle(
+                    fontFamily: 'Inter',
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              const SizedBox(width: 48),
+            ],
+          ),
+        ),
+        Positioned(
+          bottom: -50,
+          child: Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.darkBg : AppColors.cream,
+              shape: BoxShape.circle,
+            ),
+            child: CircleAvatar(
+              radius: 50,
+              backgroundColor: Colors.white,
+              backgroundImage: (photoUrl != null &&
+                      photoUrl.toString().isNotEmpty)
+                  ? NetworkImage(photoUrl)
+                  : NetworkImage(
+                          'https://ui-avatars.com/api/?name=${Uri.encodeComponent(nameStr)}&background=F97316&color=fff&bold=true&size=200')
+                      as ImageProvider,
+            ),
+          ),
+        ),
+      ],
     );
   }
 
-  Widget _buildTextField({required TextEditingController controller, required IconData icon, required bool isDark, bool readOnly = false, Widget? suffixIcon}) {
+  Widget _buildSectionLabel(String text, bool isDark) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 4, bottom: 8),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: Colors.grey.shade500,
+          fontSize: 11,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.5,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNameField(bool isDark) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       decoration: BoxDecoration(
-        color: isDark ? AppColors.darkSurface : Colors.white, 
-        borderRadius: BorderRadius.circular(16), 
-        boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 10, offset: const Offset(0, 4))]
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
       ),
       child: TextField(
-        controller: controller,
-        readOnly: readOnly,
-        style: TextStyle(fontWeight: FontWeight.w600, color: isDark ? (readOnly ? Colors.white70 : Colors.white) : (readOnly ? Colors.black54 : Colors.black87)),
-        decoration: InputDecoration(
-          icon: Icon(icon, color: AppColors.orange, size: 22), 
-          border: InputBorder.none,
-          suffixIcon: suffixIcon,
+        controller: _nameController,
+        readOnly: !_isEditingName,
+        textCapitalization: TextCapitalization.words,
+        autofocus: _isEditingName,
+        style: TextStyle(
+          fontWeight: FontWeight.w600,
+          color: isDark
+              ? (_isEditingName ? Colors.white : Colors.white70)
+              : (_isEditingName ? Colors.black87 : Colors.black54),
         ),
+        decoration: InputDecoration(
+          icon:
+              const Icon(Icons.person_outline, color: AppColors.orange, size: 22),
+          border: InputBorder.none,
+          hintText: 'Your full name',
+          suffixIcon: _isEditingName
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.edit,
+                      color: AppColors.orange, size: 20),
+                  onPressed: _startEditName,
+                  tooltip: 'Edit name',
+                ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSlotCard({
+    required bool isDark,
+    required IconData icon,
+    required String label,
+    required String value,
+    required String emptyCta,
+    required VoidCallback onAdd,
+    bool isLoading = false,
+  }) {
+    final isFilled = value.trim().isNotEmpty;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          )
+        ],
+      ),
+      child: Row(
+        children: [
+          // Leading icon
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: AppColors.orange.withOpacity(isFilled ? 0.1 : 0.15),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Icon(icon, color: AppColors.orange, size: 20),
+          ),
+          const SizedBox(width: 14),
+          // Middle: label + value (if filled) OR just label (if empty)
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey.shade500,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+                if (isFilled) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    value,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : Colors.black87,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Trailing: lock icon if filled, Add button if empty
+          if (isFilled)
+            Icon(Icons.lock_rounded,
+                size: 18, color: Colors.grey.shade400)
+          else
+            SizedBox(
+              height: 36,
+              child: ElevatedButton(
+                onPressed: isLoading ? null : onAdd,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.orange,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10)),
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                ),
+                child: isLoading
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                            color: Colors.white, strokeWidth: 2),
+                      )
+                    : Text(
+                        emptyCta,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                        ),
+                      ),
+              ),
+            ),
+        ],
       ),
     );
   }

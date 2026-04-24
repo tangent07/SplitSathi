@@ -81,7 +81,9 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
 
     // --- NORMAL SPLIT LOGIC ---
     final fairShare = _people.isEmpty ? 0.0 : total / _people.length;
-    HapticFeedback.mediumImpact();
+    if (context.read<AppProvider>().hapticsEnabled) {
+      HapticFeedback.mediumImpact(); 
+    }
 
     List<Map<String, dynamic>> balances = _people.map((p) => {
       'name': p.name.isEmpty ? 'Unknown' : p.name,
@@ -240,7 +242,7 @@ class _QuickSplitScreenState extends State<QuickSplitScreen> with SingleTickerPr
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           IconButton(icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.orange, size: 20), onPressed: () => Navigator.pop(context)),
-          const Text('Advanced Split', style: TextStyle(fontFamily: 'Nunito', fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.orange)),
+          const Text('Advanced Split', style: TextStyle(fontFamily: 'Inter', fontSize: 18, fontWeight: FontWeight.w900, color: AppColors.orange)),
           Row(
             children: [
               // --- NEW: INTERNAL SCANNER BUTTON ---

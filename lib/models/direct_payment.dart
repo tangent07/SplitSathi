@@ -2,6 +2,7 @@ import 'package:uuid/uuid.dart';
 
 class DirectPayment {
   final String id;
+  final String userId; // <-- NEW: Security Name Tag
   final String friend;
   final double amount;
   final bool youPaid; // true = you paid them, false = they paid you
@@ -10,6 +11,7 @@ class DirectPayment {
 
   DirectPayment({
     required this.id,
+    required this.userId,
     required this.friend,
     required this.amount,
     required this.youPaid,
@@ -18,6 +20,7 @@ class DirectPayment {
   });
 
   factory DirectPayment.create({
+    required String userId,
     required String friend,
     required double amount,
     required bool youPaid,
@@ -25,6 +28,7 @@ class DirectPayment {
   }) {
     return DirectPayment(
       id: const Uuid().v4(),
+      userId: userId,
       friend: friend,
       amount: amount,
       youPaid: youPaid,
@@ -36,6 +40,7 @@ class DirectPayment {
   factory DirectPayment.fromJson(Map<String, dynamic> json) {
     return DirectPayment(
       id: json['id'],
+      userId: json['userId'] ?? '', // Fallback for old data
       friend: json['friend'],
       amount: (json['amount'] as num).toDouble(),
       youPaid: json['youPaid'] ?? true,
@@ -46,6 +51,7 @@ class DirectPayment {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'userId': userId,
     'friend': friend,
     'amount': amount,
     'youPaid': youPaid,
