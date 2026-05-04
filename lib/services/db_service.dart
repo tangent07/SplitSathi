@@ -127,10 +127,7 @@ class DatabaseService {
     }
   }
   Future<void> deletePrivateDiaryEntry(String uid, String entryId) async {
-    await _db.collection('users').doc(uid).collection('private_diary').doc(entryId).update({
-      'deleted': true,
-      'deletedAt': FieldValue.serverTimestamp(),
-    });
+    await _db.collection('users').doc(uid).collection('private_diary').doc(entryId).delete();
   }
 
   // 9. Stream the private entries for the UI
@@ -158,9 +155,24 @@ class DatabaseService {
     }
   }
 
-  // 3. Delete category
-  Future<void> deletePrivateCategory(String uid, String docId) async {
+  // 3. Delete category + all its diary entries (hard delete)
+  Future<void> deletePrivateCategory(String uid, String docId, String categoryName) async {
+    // Delete the category document
     await _db.collection('users').doc(uid).collection('categories').doc(docId).delete();
+
+    // Hard delete ALL diary entries belonging to this category
+    final entries = await _db
+        .collection('users')
+        .doc(uid)
+        .collection('private_diary')
+        .where('category', isEqualTo: categoryName)
+        .get();
+
+    final batch = _db.batch();
+    for (final doc in entries.docs) {
+      batch.delete(doc.reference);
+    }
+    if (entries.docs.isNotEmpty) await batch.commit();
   }
 
   // --- BOOTSTRAP DEFAULT CATEGORIES ---

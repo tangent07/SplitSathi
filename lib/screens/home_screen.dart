@@ -1,4 +1,3 @@
-import 'receipt_scanner_screen.dart';
 import 'add_friend_sheet.dart';
 import '../services/notification_service.dart';
 import 'dart:async';
@@ -30,8 +29,8 @@ class HomeScreen extends StatelessWidget {
     return Scaffold(
       backgroundColor: isDark ? AppColors.darkBg : AppColors.cream,
       drawer: const AppDrawer(),
-      body: SafeArea(
-        child: SingleChildScrollView(
+
+        body: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -52,7 +51,7 @@ class HomeScreen extends StatelessWidget {
             ],
           ),
         ),
-      ),
+
 
       // Friends FAB
       floatingActionButton: FloatingActionButton(
@@ -1058,80 +1057,58 @@ class _LiveGlobalHeaderState extends State<LiveGlobalHeader> {
     final currency = provider.currency; final isDark = provider.isDark;
     final totalOwe = _totals['owe']!; final totalReceive = _totals['receive']!; final net = _totals['net']!;
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(20, 28, 20, 20),
-      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF97316), Color(0xFFEA580C)])),
-      child: Stack(
-        children: [
-          Positioned(right: -10, top: -20, child: Text(currency, style: TextStyle(fontSize: 130, color: Colors.white.withOpacity(0.07), fontWeight: FontWeight.w900))),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(children: [Builder(builder: (innerContext) => GestureDetector(onTap: () => Scaffold.of(innerContext).openDrawer(), child: const Padding(padding: EdgeInsets.only(right: 12.0), child: Icon(Icons.menu, color: Colors.white, size: 28)))), RichText(text: const TextSpan(children: [TextSpan(text: 'Split', style: TextStyle(fontFamily: 'Inter', fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white)), TextSpan(text: 'Sathi', style: TextStyle(fontFamily: 'Inter', fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFFFCD34D)))]))]),
-                  
-                  // --- NEW: SCANNER & DARK MODE ROW ---
-                  Row(
-                    children: [
-                      // 1. The Scanner Button
-                      GestureDetector(
-                        onTap: () async {
-                          HapticFeedback.lightImpact();
-                          final scannedTotal = await Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (context) => const ReceiptScannerScreen()),
-                          );
-                          
-                          // If they scanned a bill, open Quick Split with the total!
-                          if (scannedTotal != null && scannedTotal is double) {
-                            if (context.mounted) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(builder: (context) => QuickSplitScreen(initialTotal: scannedTotal)),
-                              );
-                            }
-                          }
-                        }, 
-                        child: Container(
-                          width: 36, height: 36, 
-                          margin: const EdgeInsets.only(right: 10), // Spacing between buttons
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), 
-                          child: const Center(child: Icon(Icons.document_scanner_outlined, color: Colors.white, size: 20))
-                        )
-                      ),
-                      
-                      // 2. The Existing Dark Mode Toggle
-                      GestureDetector(
-                        onTap: () { HapticFeedback.lightImpact(); provider.toggleDarkMode(); }, 
-                        child: Container(
-                          width: 36, height: 36, 
-                          decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), 
-                          child: Center(child: Text(isDark ? '☀️' : '🌙', style: const TextStyle(fontSize: 18)))
-                        )
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const Padding(padding: EdgeInsets.only(left: 40.0, top: 4), child: Text('Split bills. Not friendships. 🤝', style: TextStyle(fontSize: 12, color: Colors.white60))),
-              const SizedBox(height: 14),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+      ),
+      child: Container(
+        padding: EdgeInsets.fromLTRB(20, MediaQuery.of(context).padding.top + 16, 20, 20),
+        decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: [Color(0xFFF97316), Color(0xFFEA580C)])),
+        child: Stack(
+          children: [
+            Positioned(right: -10, top: -20, child: Text(currency, style: TextStyle(fontSize: 130, color: Colors.white.withOpacity(0.07), fontWeight: FontWeight.w900))),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _balanceItem('YOU OWE', '$currency${totalOwe.round()}', const Color(0xFFFECACA)),
-                    _balanceItem('YOU GET', '$currency${totalReceive.round()}', const Color(0xFFBBF7D0)),
-                    _balanceItem('NET', '${net >= 0 ? '+' : ''}$currency${net.round()}', Colors.white),
+                    Row(children: [Builder(builder: (innerContext) => GestureDetector(onTap: () => Scaffold.of(innerContext).openDrawer(), child: const Padding(padding: EdgeInsets.only(right: 12.0), child: Icon(Icons.menu, color: Colors.white, size: 28)))), RichText(text: const TextSpan(children: [TextSpan(text: 'Split', style: TextStyle(fontFamily: 'Inter', fontSize: 28, fontWeight: FontWeight.w900, color: Colors.white)), TextSpan(text: 'Sathi', style: TextStyle(fontFamily: 'Inter', fontSize: 28, fontWeight: FontWeight.w900, color: Color(0xFFFCD34D)))]))]),
+                    
+                    Row(
+                      children: [
+                        //1. The Existing Dark Mode Toggle
+                        GestureDetector(
+                          onTap: () { HapticFeedback.lightImpact(); provider.toggleDarkMode(); }, 
+                          child: Container(
+                            width: 36, height: 36, 
+                            decoration: BoxDecoration(color: Colors.white.withOpacity(0.2), borderRadius: BorderRadius.circular(10)), 
+                            child: Center(child: Text(isDark ? '☀️' : '🌙', style: const TextStyle(fontSize: 18)))
+                          )
+                        ),
+                      ],
+                    ),
                   ],
                 ),
-              ),
-            ],
-          ),
-        ],
+                const Padding(padding: EdgeInsets.only(left: 40.0, top: 4), child: Text('Split bills. Not friendships. 🤝', style: TextStyle(fontSize: 12, color: Colors.white60))),
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(color: Colors.white.withOpacity(0.15), borderRadius: BorderRadius.circular(12)),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceAround,
+                    children: [
+                      _balanceItem('YOU OWE', '$currency${totalOwe.round()}', const Color(0xFFFECACA)),
+                      _balanceItem('YOU GET', '$currency${totalReceive.round()}', const Color(0xFFBBF7D0)),
+                      _balanceItem('NET', '${net >= 0 ? '+' : ''}$currency${net.round()}', Colors.white),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

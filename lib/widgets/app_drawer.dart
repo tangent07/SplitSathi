@@ -3,7 +3,6 @@ import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'export_report_sheet.dart';
 import 'package:flutter/services.dart';
-import '../screens/receipt_scanner_screen.dart';
 import '../screens/quick_split_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -180,36 +179,7 @@ class AppDrawer extends StatelessWidget {
                           ),
                           const SizedBox(height: 16),
                           _buildSectionHeader('TOOLS', isDark),
-                          _buildDrawerItem(
-                            context: context,
-                            icon: Icons.document_scanner_outlined,
-                            title: 'Scan Receipt',
-                            isDark: isDark,
-                            onTap: () async {
-                              Navigator.pop(context);
-                              HapticFeedback.lightImpact();
-
-                              final scannedTotal = await Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (context) =>
-                                        const ReceiptScannerScreen()),
-                              );
-
-                              if (scannedTotal != null &&
-                                  scannedTotal is double) {
-                                if (context.mounted) {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => QuickSplitScreen(
-                                          initialTotal: scannedTotal),
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                          ),
+                          
                           _buildDrawerItem(
                             context: context,
                             icon: Icons.insert_chart_outlined,

@@ -17,7 +17,8 @@ class CreateGroupSheet extends StatefulWidget {
 class _CreateGroupSheetState extends State<CreateGroupSheet> {
   final _nameController = TextEditingController();
   String _selectedEmoji = '🍕';
-  
+  String? _errorMessage;
+
   final Set<Map<String, dynamic>> _selectedFriends = {}; 
   bool _isLoading = false;
 
@@ -37,70 +38,63 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
     });
   }
 
-  Future<void> _createGroup() async {
-    final groupName = _nameController.text.trim();
-    if (groupName.isEmpty) {
-      _showToast('Please enter a group name!');
-      return;
-    }
+Future<void> _createGroup() async {
+  // Dismiss keyboard immediately
+  FocusManager.instance.primaryFocus?.unfocus();
 
-    // --- OPTION 2 BYPASS: Removed the requirement to have at least 1 friend selected ---
-    // Now you can create a "Solo Group" to test the UI!
-
-    setState(() => _isLoading = true);
-    HapticFeedback.mediumImpact();
-
-    try {
-      final myUid = AuthService().currentUser!.uid;
-      
-      // We always add "You" to the list of member names
-      List<String> membersList = ['You'];
-
-      // We always add your UID to the list of member UIDs for security rules
-      List<String> memberUids = [myUid]; 
-
-      for (var friend in _selectedFriends) {
-        membersList.add(friend['name']);
-        memberUids.add(friend['uid']); // Add friend UIDs so they can access the group too
-      }
-
-      await FirebaseFirestore.instance.collection('groups').add({
-        'name': groupName,
-        'icon': _selectedEmoji,
-        'createdAt': FieldValue.serverTimestamp(),
-        'createdBy': myUid,
-        'members': memberUids, // <-- CRUCIAL: Pass the UIDs here for the security rules!
-        'memberNames': membersList, // Keep names separate for easy display
-        'totalExpenses': 0.0,
-      });
-
-      if (mounted) {
-        Navigator.pop(context);
-        // Note: SnackBar here will show on the Home Screen after the sheet closes, which is fine!
-      }
-    } catch (e) {
-      _showToast('Error: $e');
-    } finally {
-      if (mounted) {
-        setState(() => _isLoading = false);
-      }
-    }
+  final groupName = _nameController.text.trim();
+  if (groupName.isEmpty) {
+    _showToast('Please enter a group name!');
+    return;
   }
 
-  void _showToast(String msg) {
-    if (!mounted) return;
-    // FIX 3: To make the SnackBar show over the BottomSheet, we need to ensure 
-    // it attaches to the root navigator if possible, or just let it show on the Scaffold below.
-    // Since we are popping the sheet on success anyway, showing it on the main Scaffold is okay for errors.
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(fontFamily: 'Inter', fontWeight: FontWeight.w700)),
-        backgroundColor: AppColors.orange,
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      ),
-    );
+  if (_selectedFriends.isEmpty) {
+    // FIX: Use the internal _showToast to keep the message on this sheet
+    _showToast('Please select at least one member.');
+    return;
   }
+
+  setState(() => _isLoading = true);
+  HapticFeedback.mediumImpact();
+
+  try {
+    final myUid = AuthService().currentUser!.uid;
+    List<String> membersList = ['You'];
+    List<String> memberUids = [myUid]; 
+
+    for (var friend in _selectedFriends) {
+      membersList.add(friend['name']);
+      memberUids.add(friend['uid']);
+    }
+
+    await FirebaseFirestore.instance.collection('groups').add({
+      'name': groupName,
+      'icon': _selectedEmoji,
+      'createdAt': FieldValue.serverTimestamp(),
+      'createdBy': myUid,
+      'members': memberUids,
+      'memberNames': membersList,
+      'totalExpenses': 0.0,
+    });
+
+    if (mounted) {
+      Navigator.pop(context);
+    }
+  } catch (e) {
+    _showToast('Error: $e');
+  } finally {
+    if (mounted) {
+      setState(() => _isLoading = false);
+    }
+  }
+}
+
+void _showToast(String msg) {
+  setState(() => _errorMessage = msg);
+  Future.delayed(const Duration(seconds: 3), () {
+    if (mounted) setState(() => _errorMessage = null);
+  });
+}
 
   @override
   Widget build(BuildContext context) {
@@ -118,10 +112,8 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
         left: 20, 
         right: 20, 
         top: 16, 
-        // FIX 1: Padding at the bottom adjusts when the keyboard opens
         bottom: MediaQuery.of(context).viewInsets.bottom + 24 
       ),
-      // Removed fixed height! It will now take up the space it needs up to a maximum.
       constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
       child: Column(
         mainAxisSize: MainAxisSize.min, // Wrap content vertically
@@ -269,6 +261,35 @@ class _CreateGroupSheetState extends State<CreateGroupSheet> {
           ),
           
           const SizedBox(height: 16),
+
+          if (_errorMessage != null)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.redAccent.withOpacity(0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.redAccent, width: 1.5),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.error_outline, color: Colors.redAccent, size: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        fontFamily: 'Inter',
+                        fontWeight: FontWeight.w700,
+                        color: Colors.redAccent,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
 
           GestureDetector(
             onTap: _isLoading ? null : _createGroup,

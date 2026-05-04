@@ -246,6 +246,16 @@ class _TodayTab extends StatelessWidget {
     required this.myUid, required this.selectedDate, required this.onDateChanged
   });
 
+  static Color staticCategoryColor(int index) => _categoryColor(index);
+
+  static Color _categoryColor(int index) {
+    const int total = 24;
+    final double rawHue = (index * (360 / total)) % 360;
+    double hue = rawHue;
+    if (hue >= 20 && hue <= 50) hue = (hue + 40) % 360;
+    return HSLColor.fromAHSL(1.0, hue, 0.65, 0.50).toColor();
+  }
+
   @override
   Widget build(BuildContext context) {
     final dateStr = DateFormat('yyyy-MM-dd').format(selectedDate);
@@ -254,18 +264,18 @@ class _TodayTab extends StatelessWidget {
     final liveCatNames = categories.map((c) => c['name']).toSet();
     final displayCategories = List<Map<String, dynamic>>.from(categories);
     
-    for (var e in activeOnDate) {
-      if (!liveCatNames.contains(e.catId)) {
-        displayCategories.add({'name': e.catId, 'icon': '📦'});
-        liveCatNames.add(e.catId);
-      }
-    }
+    // Orphan categories are not shown — deleting a category removes all its data
 
     final isToday = DateFormat('yyyy-MM-dd').format(DateTime.now()) == dateStr;
 
+    // Calculate max spend across categories for relative progress bar
+    final categorySpends = { for (var cat in displayCategories) cat['name']: activeOnDate.where((e) => e.catId == cat['name']).fold(0.0, (s, e) => s + e.amount) };
+    final maxSpend = categorySpends.values.fold(0.0, (a, b) => a > b ? a : b);
+
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100), 
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),
       children: [
+        // Date navigation row — unchanged
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
@@ -277,8 +287,8 @@ class _TodayTab extends StatelessWidget {
                   child: const Padding(padding: EdgeInsets.all(4), child: Icon(Icons.chevron_left, color: AppColors.orange, size: 20)),
                 ),
                 Text(
-                  isToday ? 'Today' : DateFormat('dd MMM').format(selectedDate), 
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.orange)
+                  isToday ? 'Today' : DateFormat('dd MMM').format(selectedDate),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.orange),
                 ),
                 GestureDetector(
                   onTap: () => onDateChanged(1),
@@ -290,45 +300,135 @@ class _TodayTab extends StatelessWidget {
         ),
         const SizedBox(height: 16),
 
-        ...displayCategories.asMap().entries.map((entry) {
-          final cat = entry.value;
-          final index = entry.key;
-          final spent = activeOnDate.where((e) => e.catId == cat['name']).fold(0.0, (s, e) => s + e.amount);
-          
-          if (spent == 0 && !categories.any((c) => c['name'] == cat['name'])) {
-            return const SizedBox.shrink(); 
-          }
+        // 2-column card grid
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            crossAxisSpacing: 10,
+            mainAxisSpacing: 10,
+            childAspectRatio: 1.05,
+          ),
+          itemCount: displayCategories.length + 1, // +1 for the Add card
+          itemBuilder: (context, index) {
+            // Last card = Add Category
+            if (index == displayCategories.length) {
+              return GestureDetector(
+                onTap: () => showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  builder: (_) => _ManageCategoriesSheet(myUid: myUid),
+                ),
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: isDark ? Colors.white24 : Colors.black12, width: 1.5, style: BorderStyle.solid),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Container(
+                        width: 32, height: 32,
+                        decoration: BoxDecoration(color: AppColors.orange.withOpacity(0.12), shape: BoxShape.circle),
+                        child: const Icon(Icons.add, color: AppColors.orange, size: 18),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('Add category', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: isDark ? Colors.white54 : Colors.black38)),
+                    ],
+                  ),
+                ),
+              );
+            }
 
-          return GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: () => _showCategoryHistory(context, cat, entries, isDark, myUid),
-            child: _buildProgress(cat, spent, index, isDark),
-          );
-        }),
+            final cat = displayCategories[index];
+            final spent = categorySpends[cat['name']] ?? 0.0;
+            final entryCount = activeOnDate.where((e) => e.catId == cat['name']).length;
+
+
+
+            final color = _TodayTab._categoryColor(index);
+            final progressValue = maxSpend > 0 ? (spent / maxSpend).clamp(0.0, 1.0) : 0.0;
+
+            return GestureDetector(
+              onTap: () => _showCategoryHistory(context, cat, entries, isDark, myUid),
+              child: _buildCategoryCard(cat, spent, entryCount, color, progressValue, isDark),
+            );
+          },
+        ),
       ],
     );
   }
 
-  Widget _buildProgress(Map<String, dynamic> cat, double spent, int index, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 24), 
-      child: Column(
+  Widget _buildCategoryCard(Map<String, dynamic> cat, double spent, int entryCount, Color color, double progress, bool isDark) {
+    final cardBg = isDark ? AppColors.darkSurface : Colors.white;
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+    final mutedColor = isDark ? Colors.white38 : Colors.black38;
+    final trackColor = color.withOpacity(0.15);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        // Subtle shadow for depth
+        boxShadow: isDark ? [] : [BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 8, offset: const Offset(0, 2))],
+      ),
+      child: Stack(
         children: [
-          Row(children: [Text(cat['icon'], style: const TextStyle(fontSize: 16)), const SizedBox(width: 10), Text(cat['name'], style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)), const Spacer(), Text('₹${spent.round()}', style: const TextStyle(fontWeight: FontWeight.w900, color: AppColors.orange, fontSize: 14))]),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(10),
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: (spent / 2000).clamp(0, 1)),
-              duration: const Duration(milliseconds: 1000),
-              curve: Curves.easeOutCubic,
-              builder: (context, value, _) => LinearProgressIndicator(
-                value: value, 
-                backgroundColor: isDark ? Colors.white10 : Colors.black12, 
-                // FIXED COLOR LOGIC: index + 1 ensures all categories get distinct colors
-                color: AppConstants.getPieColor(index + 1), 
-                minHeight: 8
+          // Left color accent bar
+          Positioned(
+            left: 0, top: 0, bottom: 0,
+            child: Container(
+              width: 4,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: const BorderRadius.only(topLeft: Radius.circular(16), bottomLeft: Radius.circular(16)),
               ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Emoji icon
+                Text(cat['icon'] ?? '📦', style: const TextStyle(fontSize: 22)),
+                const SizedBox(height: 6),
+                // Category name
+                Text(cat['name'], style: TextStyle(fontSize: 13, fontWeight: FontWeight.w800, color: textColor), maxLines: 1, overflow: TextOverflow.ellipsis),
+                // Entry count
+                Text('$entryCount ${entryCount == 1 ? "entry" : "entries"}', style: TextStyle(fontSize: 11, color: mutedColor)),
+                const Spacer(),
+                // Amount
+                TweenAnimationBuilder<double>(
+                  key: ValueKey('${cat['name']}_$spent'),
+                  tween: Tween<double>(begin: 0, end: spent),
+                  duration: const Duration(milliseconds: 900),
+                  curve: Curves.easeOutCubic,
+                  builder: (context, value, _) => Text(
+                    '₹${value.round()}',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: spent > 0 ? color : mutedColor),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                // Progress bar (relative to highest category)
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: TweenAnimationBuilder<double>(
+                    key: ValueKey('${cat['name']}_progress_$progress'),
+                    tween: Tween<double>(begin: 0, end: progress),
+                    duration: const Duration(milliseconds: 1000),
+                    curve: Curves.easeOutCubic,
+                    builder: (context, value, _) => LinearProgressIndicator(
+                      value: value,
+                      backgroundColor: trackColor,
+                      color: color,
+                      minHeight: 4,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -568,7 +668,7 @@ class _PastMonthsTab extends StatelessWidget {
                       builder: (context, value, _) => LinearProgressIndicator(
                         value: value, 
                         backgroundColor: isDark ? Colors.white10 : Colors.black.withOpacity(0.05), 
-                        color: AppConstants.getPieColor(index + 1), 
+                        color: _TodayTab._categoryColor(index), 
                         minHeight: 8
                       ),
                     ),
@@ -656,7 +756,7 @@ class _MiniPiePainter extends CustomPainter {
       if (catAmount > 0) {
         final sweepAngle = (catAmount / total) * 2 * math.pi * animationValue;
         // FIXED COLOR LOGIC: i + 1
-        final color = AppConstants.getPieColor(i + 1);
+        final color = _TodayTab._categoryColor(i);
         canvas.drawArc(Rect.fromCircle(center: center, radius: radius), startAngle, sweepAngle, true, Paint()..color = color);
         startAngle += sweepAngle;
       }
@@ -691,6 +791,7 @@ class _CategoryHistorySheetState extends State<_CategoryHistorySheet> {
   void initState() {
     super.initState();
     _localEntries = List.from(widget.entries);
+    
   }
 
   @override
@@ -749,70 +850,347 @@ class _ManageCategoriesSheet extends StatefulWidget {
 
 class _ManageCategoriesSheetState extends State<_ManageCategoriesSheet> {
   final _nameController = TextEditingController();
+  String _selectedEmoji = '📦';
+
+  static const _emojis = ['📦', '🛒', '🎮', '✈️', '🏋️', '📚', '💊', '🐾', '🎨', '👗', '🔧', '🌿'];
+
+  void _showDeleteConfirmation(BuildContext context, String docId, String catName, String catIcon, int entryCount, double totalSpent, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (_) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.darkSurface : Colors.white,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+            const SizedBox(height: 20),
+            Row(
+              children: [
+                Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                  child: const Center(child: Icon(Icons.delete_forever, color: Colors.red, size: 24)),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('Delete "$catName"?', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900, color: isDark ? Colors.white : Colors.black87)),
+                      const SizedBox(height: 2),
+                      Text('$catIcon  $catName', style: TextStyle(fontSize: 13, color: isDark ? Colors.white54 : Colors.black45)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.red.withOpacity(0.07),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.red.withOpacity(0.2)),
+              ),
+              child: Text(
+                'This will permanently delete $entryCount ${entryCount == 1 ? "entry" : "entries"} and remove ₹${totalSpent.round()} from your entire history. This cannot be undone.',
+                style: const TextStyle(fontSize: 13, color: Colors.red, fontWeight: FontWeight.w600),
+              ),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () => Navigator.pop(context),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.darkSurface2 : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Center(child: Text('Cancel', style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white70 : Colors.black54))),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: GestureDetector(
+                    onTap: () {
+                      DatabaseService().deletePrivateCategory(widget.myUid, docId, catName);
+                      Navigator.pop(context); // close confirmation
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      decoration: BoxDecoration(color: Colors.red, borderRadius: BorderRadius.circular(12)),
+                      child: const Center(child: Text('Yes, Delete Everything', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.white, fontSize: 13))),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showEditDialog(BuildContext context, String id, String currentName, String currentIcon, bool isDark) {
+    final editController = TextEditingController(text: currentName);
+    String editEmoji = currentIcon;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => StatefulBuilder(
+        builder: (context, setModalState) => Container(
+          padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.darkSurface : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+              const SizedBox(height: 20),
+              const Text('Edit Category', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900)),
+              const SizedBox(height: 16),
+              Wrap(
+                spacing: 8, runSpacing: 8,
+                children: _emojis.map((emoji) {
+                  final isSel = emoji == editEmoji;
+                  return GestureDetector(
+                    onTap: () => setModalState(() => editEmoji = emoji),
+                    child: Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(
+                        color: isSel ? AppColors.orange.withOpacity(0.15) : Colors.transparent,
+                        border: Border.all(color: isSel ? AppColors.orange : (isDark ? Colors.white24 : Colors.black12), width: 1.5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Center(child: Text(emoji, style: const TextStyle(fontSize: 20))),
+                    ),
+                  );
+                }).toList(),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: editController,
+                autofocus: true,
+                style: TextStyle(fontWeight: FontWeight.w700, color: isDark ? Colors.white : Colors.black87),
+                decoration: InputDecoration(
+                  hintText: 'Category name',
+                  filled: true,
+                  fillColor: isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                  focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () {
+                    if (editController.text.isNotEmpty) {
+                      DatabaseService().savePrivateCategory(widget.myUid, editController.text.trim(), editEmoji, docId: id);
+                      Navigator.pop(context);
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(backgroundColor: AppColors.orange, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 14)),
+                  child: const Text('Save Changes', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = context.watch<AppProvider>().isDark;
+    final inputBg = isDark ? AppColors.darkSurface2 : const Color(0xFFFFF7ED);
+    final textColor = isDark ? Colors.white : const Color(0xFF1C1C1C);
+
     return Container(
       padding: EdgeInsets.only(left: 20, right: 20, top: 20, bottom: MediaQuery.of(context).viewInsets.bottom + 20),
-      decoration: BoxDecoration(color: isDark ? AppColors.darkSurface : Colors.white),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.darkSurface : Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Manage Sections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 15),
+          Center(child: Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2)))),
+          const SizedBox(height: 20),
+          Center(child: Text('Manage Sections', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: textColor))),
+          const SizedBox(height: 20),
+
+          // Emoji picker
+          const Text('PICK EMOJI', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8, runSpacing: 8,
+            children: _emojis.map((emoji) {
+              final isSelected = emoji == _selectedEmoji;
+              return GestureDetector(
+                onTap: () => setState(() => _selectedEmoji = emoji),
+                child: Container(
+                  width: 44, height: 44,
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppColors.orange.withOpacity(0.15) : Colors.transparent,
+                    border: Border.all(color: isSelected ? AppColors.orange : (isDark ? Colors.white24 : Colors.black12), width: 1.5),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Center(child: Text(emoji, style: const TextStyle(fontSize: 20))),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+
+          // Name input + add button
+          const Text('NEW CATEGORY', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)),
+          const SizedBox(height: 10),
           Row(
             children: [
-              Expanded(child: TextField(controller: _nameController, decoration: const InputDecoration(hintText: 'Section Name'))),
-              IconButton(icon: const Icon(Icons.add_circle, color: AppColors.orange), onPressed: () {
-                if (_nameController.text.isNotEmpty) {
-                  DatabaseService().savePrivateCategory(widget.myUid, _nameController.text.trim(), '📦');
-                  _nameController.clear();
-                }
-              }),
+              Expanded(
+                child: TextField(
+                  controller: _nameController,
+                  style: TextStyle(fontWeight: FontWeight.w700, color: textColor),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. Health, Pets...',
+                    hintStyle: TextStyle(color: isDark ? Colors.white30 : Colors.black26),
+                    filled: true,
+                    fillColor: inputBg,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: const BorderSide(color: AppColors.orange, width: 1.5)),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              GestureDetector(
+                onTap: () {
+                  if (_nameController.text.isNotEmpty) {
+                    DatabaseService().savePrivateCategory(widget.myUid, _nameController.text.trim(), _selectedEmoji);
+                    _nameController.clear();
+                    setState(() => _selectedEmoji = '📦');
+                  }
+                },
+                child: Container(
+                  width: 46, height: 46,
+                  decoration: BoxDecoration(color: AppColors.orange, borderRadius: BorderRadius.circular(12)),
+                  child: const Icon(Icons.add, color: Colors.white, size: 22),
+                ),
+              ),
             ],
           ),
-          const Divider(height: 40),
+          const SizedBox(height: 20),
+
+          // Category list
+          const Text('YOUR CATEGORIES', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: AppColors.orange, letterSpacing: 0.5)),
+          const SizedBox(height: 10),
+
           StreamBuilder<QuerySnapshot>(
             stream: DatabaseService().getPrivateCategoriesStream(widget.myUid),
             builder: (context, snapshot) {
               final docs = snapshot.data?.docs ?? [];
+              if (docs.isEmpty) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Center(child: Text('No categories yet.', style: TextStyle(color: isDark ? Colors.white38 : Colors.black26))),
+                );
+              }
               return Flexible(
-                child: ListView.builder(
+                child: ListView.separated(
                   shrinkWrap: true,
                   itemCount: docs.length,
-                  itemBuilder: (context, i) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(docs[i]['name']),
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(icon: const Icon(Icons.edit_outlined, size: 20), onPressed: () => _showEditDialog(docs[i].id, docs[i]['name'])),
-                        IconButton(icon: const Icon(Icons.delete_outline, color: Colors.red, size: 20), onPressed: () => DatabaseService().deletePrivateCategory(widget.myUid, docs[i].id)),
-                      ],
-                    ),
-                  ),
+                  separatorBuilder: (_, __) => const SizedBox(height: 8),
+                  itemBuilder: (context, i) {
+                    final doc = docs[i];
+                    final catName = doc['name'] as String;
+                    final catIcon = doc['icon'] as String? ?? '📦';
+                    final catColor = _TodayTab.staticCategoryColor(i);
+
+                    return Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.darkSurface2 : Colors.grey.shade50,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: isDark ? Colors.white10 : Colors.black.withOpacity(0.06)),
+                      ),
+                      child: Row(
+                        children: [
+                          // Color accent dot
+                          Container(width: 4, height: 36, decoration: BoxDecoration(color: catColor, borderRadius: BorderRadius.circular(4))),
+                          const SizedBox(width: 12),
+                          // Emoji
+                          Text(catIcon, style: const TextStyle(fontSize: 20)),
+                          const SizedBox(width: 12),
+                          // Name
+                          Expanded(child: Text(catName, style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15, color: textColor))),
+                          // Edit
+                          GestureDetector(
+                            onTap: () => _showEditDialog(context, doc.id, catName, catIcon, isDark),
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(color: AppColors.orange.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                              child: const Icon(Icons.edit_outlined, size: 16, color: AppColors.orange),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // Delete
+                          FutureBuilder<QuerySnapshot>(
+                            future: FirebaseFirestore.instance
+                                .collection('users').doc(widget.myUid)
+                                .collection('private_diary')
+                                .where('category', isEqualTo: catName)
+                                .where('deleted', isEqualTo: false)
+                                .get(),
+                            builder: (context, entrySnap) {
+                              final entryCount = entrySnap.data?.docs.length ?? 0;
+                              final totalSpent = entrySnap.data?.docs.fold(0.0, (sum, d) => sum + ((d['amount'] as num).toDouble())) ?? 0.0;
+                              return GestureDetector(
+                                onTap: () => _showDeleteConfirmation(context, doc.id, catName, catIcon, entryCount, totalSpent, isDark),
+                                child: Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(color: Colors.red.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
+                                  child: const Icon(Icons.delete_outline, size: 16, color: Colors.red),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
               );
             },
           ),
+          const SizedBox(height: 8),
         ],
       ),
     );
   }
 
-  void _showEditDialog(String id, String currentName) {
-    final editController = TextEditingController(text: currentName);
-    showDialog(context: context, builder: (context) => AlertDialog(
-      title: const Text('Rename Section'),
-      content: TextField(controller: editController),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-        TextButton(onPressed: () {
-          DatabaseService().savePrivateCategory(widget.myUid, editController.text.trim(), '📦', docId: id);
-          Navigator.pop(context);
-        }, child: const Text('Save')),
-      ],
-    ));
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
   }
 }
 

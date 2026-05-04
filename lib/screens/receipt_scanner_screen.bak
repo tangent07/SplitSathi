@@ -58,35 +58,91 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen> {
     final inputImage = InputImage.fromFile(image);
     try {
       final RecognizedText recognizedText = await _textRecognizer.processImage(inputImage);
-      
-      List<ScannedItem> foundItems = [];
-      
-      // REGEX: Looks for numbers that look like prices (e.g., 12.50, 400.00, $15)
-      final priceRegExp = RegExp(r'[$₹€£]?\s*(\d+[\.,]\d{2})');
 
-      // We read the receipt line by line
+      List<ScannedItem> foundItems = [];
+
+      // Words that mark the START of the item section
+      final sectionStartWords = ['particular', 'item', 'description', 'product', 'qty', 'details'];
+
+      // Words that mark the END of the item section
+      final sectionEndWords = ['sub total', 'subtotal', 'sub-total', 'cgst', 'sgst', 'gst',
+        'vat', 'tax', 'total', 'discount', 'service charge', 'food total'
+      ];
+
+      // Header/metadata words to always skip regardless of section
+      final headerSkipWords = ['date', 'table', 'bill no', 'invoice', 'w. no', 'waiter',
+        'cover', 'thank', 'welcome', 'visit', 'gst-', 'gstin', 'e.&o.e',
+        'highway', 'road', 'near', 'opp', 'bus stop', 'phone', 'tel', 'mob'
+      ];
+
+      // Collect all lines
+      final List<String> allLines = [];
       for (TextBlock block in recognizedText.blocks) {
         for (TextLine line in block.lines) {
-          final text = line.text;
-          final match = priceRegExp.firstMatch(text);
-          
-          if (match != null) {
-            // If we found a price, extract the number
-            String priceStr = match.group(1)!.replaceAll(',', '.');
-            double price = double.tryParse(priceStr) ?? 0.0;
-            
-            // The item name is whatever text comes BEFORE the price on that line
-            String name = text.substring(0, match.start).trim();
-            // Clean up common receipt garbage
-            name = name.replaceAll(RegExp(r'[^a-zA-Z\s]'), '').trim();
-            
-            // Ignore taxes, subtotals, and empty names to keep the list clean
-            if (name.isNotEmpty && price > 0 && 
-                !name.toLowerCase().contains('tax') && 
-                !name.toLowerCase().contains('total') &&
-                !name.toLowerCase().contains('tip')) {
-              foundItems.add(ScannedItem(name: name, price: price));
-            }
+          final trimmed = line.text.trim();
+          if (trimmed.isNotEmpty) allLines.add(trimmed);
+        }
+      }
+
+      // Find where the item section starts
+      int sectionStart = 0;
+      for (int i = 0; i < allLines.length; i++) {
+        final lower = allLines[i].toLowerCase();
+        if (sectionStartWords.any((w) => lower.contains(w))) {
+          sectionStart = i + 1; // Start parsing AFTER this header line
+          break;
+        }
+      }
+
+      // REGEX: Matches the LAST number on a line (the Amount column in multi-column receipts)
+      // This handles: "MISAL PAV   2   85   170.00" → picks 170.00
+      final lastPriceRegExp = RegExp(r'(\d{1,6}(?:[.,]\d{1,2})?)\s*$');
+      // Also detect lines that have multiple numbers (Qty Rate Amount format)
+      final multiNumberRegExp = RegExp(r'\d');
+
+      for (int i = sectionStart; i < allLines.length; i++) {
+        final text = allLines[i];
+        final lowerText = text.toLowerCase();
+
+        // Stop parsing when we hit totals/taxes section
+        if (sectionEndWords.any((w) => lowerText.contains(w))) break;
+
+        // Skip header/metadata lines
+        if (headerSkipWords.any((w) => lowerText.contains(w))) continue;
+
+        // Skip lines that are just dashes or separators
+        if (RegExp(r'^[-=*_\s]+$').hasMatch(text)) continue;
+
+        // Skip lines with only numbers and no letters (e.g. "53", "6", "18")
+        if (!RegExp(r'[a-zA-Z]').hasMatch(text)) continue;
+
+        // Try to find the LAST price on the line (Amount column)
+        final match = lastPriceRegExp.firstMatch(text);
+        if (match != null) {
+          String priceStr = match.group(1)!.replaceAll(',', '.');
+          double price = double.tryParse(priceStr) ?? 0.0;
+
+          // Filter out unrealistic prices
+          if (price < 5 || price > 50000) continue;
+
+          // Extract item name: everything before the numbers start
+          // For "MISAL PAV   2   85   170.00" → name = "MISAL PAV"
+          String name = text.replaceAll(lastPriceRegExp, '').trim();
+          // Remove trailing numbers (Qty, Rate columns)
+          name = name.replaceAll(RegExp(r'\s+\d+(?:[.,]\d+)?\s*$'), '').trim();
+          name = name.replaceAll(RegExp(r'\s+\d+\s*$'), '').trim();
+          // Remove leading/trailing special chars
+          name = name.replaceAll(RegExp(r'^[^a-zA-Z]+'), '').trim();
+          name = name.replaceAll(RegExp(r'[^a-zA-Z0-9\s]+$'), '').trim();
+
+          // Must have at least 2 letters to be a valid item name
+          if (name.length < 2) continue;
+          if (!RegExp(r'[a-zA-Z]{2}').hasMatch(name)) continue;
+
+          // Avoid duplicates
+          final isDuplicate = foundItems.any((e) => e.price == price && e.name == name);
+          if (!isDuplicate) {
+            foundItems.add(ScannedItem(name: name, price: price));
           }
         }
       }
@@ -99,7 +155,11 @@ class _ReceiptScannerScreenState extends State<ReceiptScannerScreen> {
 
     } catch (e) {
       setState(() => _isScanning = false);
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Failed to read receipt.')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to read receipt: $e')),
+        );
+      }
     }
   }
 
