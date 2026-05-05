@@ -205,7 +205,7 @@ class AppDrawer extends StatelessWidget {
                             onTap: () async {
                               Navigator.pop(context);
                               final Uri url = Uri.parse(
-                                  'https://www.termsfeed.com/live/example-privacy-policy');
+                                  'https://tangent07.github.io/splitsathi-privacy-policy/');
 
                               try {
                                 if (!await launchUrl(url,

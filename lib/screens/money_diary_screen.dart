@@ -271,6 +271,7 @@ class _TodayTab extends StatelessWidget {
     // Calculate max spend across categories for relative progress bar
     final categorySpends = { for (var cat in displayCategories) cat['name']: activeOnDate.where((e) => e.catId == cat['name']).fold(0.0, (s, e) => s + e.amount) };
     final maxSpend = categorySpends.values.fold(0.0, (a, b) => a > b ? a : b);
+    displayCategories.sort((a, b) => (categorySpends[b['name']] ?? 0.0).compareTo(categorySpends[a['name']] ?? 0.0));
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 100),

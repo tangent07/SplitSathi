@@ -21,7 +21,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _notifySettledUp = true;
   bool _notifyGroupInvites = true;
   final String _playStoreLink = '';
-  final String _privacyPolicyLink = 'https://www.termsfeed.com/live/example-privacy-policy';
+  final String _privacyPolicyLink = 'https://tangent07.github.io/splitsathi-privacy-policy/';
   final String _supportEmail = 'splitsathi@gmail.com';
 
   int _versionTapCount = 0;
